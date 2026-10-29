@@ -101,7 +101,11 @@ function startFakeCdp(port, opts = {}) {
       );
       let buf = Buffer.alloc(0);
       let frag = Buffer.alloc(0);
+      // Soket klien boleh putus kapan saja (tracer menutup sesi);
+      // server uji tidak boleh crash karenanya.
+      socket.on("error", () => {});
       const sendFrame = (opcode, payload) => {
+        if (socket.destroyed) return;
         const data = Buffer.isBuffer(payload) ? payload : Buffer.from(payload);
         let header;
         if (data.length < 126) {
@@ -117,7 +121,11 @@ function startFakeCdp(port, opts = {}) {
           header[1] = 127;
           header.writeBigUInt64BE(BigInt(data.length), 2);
         }
-        socket.write(Buffer.concat([header, data]));
+        try {
+          socket.write(Buffer.concat([header, data]));
+        } catch {
+          /* soket sudah putus: abaikan */
+        }
       };
       const emit = (method, params) => {
         sendFrame(1, JSON.stringify({ method, params, sessionId: "SID-1" }));
@@ -201,8 +209,9 @@ function startFakeCdp(port, opts = {}) {
                   type: "log",
                   args: [{ type: "string", value: `banjir-${n} `.repeat(12) }],
                 });
-                if (n >= burstEvents) clearInterval(iv);
+                if (n >= burstEvents || socket.destroyed) clearInterval(iv);
               }, 5);
+              socket.on("close", () => clearInterval(iv));
             }
           } else if (msg.method === "Page.navigate") {
             reply({ id: msg.id, result: {} });
