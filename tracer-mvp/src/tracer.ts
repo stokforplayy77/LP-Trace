@@ -39,6 +39,8 @@ export interface TracerOptions {
   retries: number;
   /** Jeda dasar antar percobaan ulang, ms (backoff eksponensial, maks 8000). */
   retryDelayMs: number;
+  /** Bila true (--survive), penutupan satu koneksi tidak mengakhiri sesi selama masih ada koneksi lain yang hidup; penutupan itu dicatat sebagai baris tracer.connection_closed. Tanpa flag ini, penutupan koneksi mana pun mengakhiri sesi (perilaku MS). */
+  survive: boolean;
 }
 
 export interface TracerOutcome {
@@ -342,6 +344,12 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
   // Klien dibuat ulang pada tiap percobaan handshake (retry); shutdown
   // selalu menutup kumpulan klien yang sedang aktif.
   let clients: CdpClient[] = [];
+  // Koneksi yang masih hidup, sejajar dengan clients; direset pada tiap
+  // percobaan connectAll. Dipakai mode --survive untuk menghitung sisa.
+  let alive: boolean[] = [];
+  // Koneksi yang menutup lebih dulu dan "diselamatkan" mode --survive,
+  // sesuai urutan penutupan; dilaporkan di session_ended.
+  const closedEndpoints: Array<{ endpoint: string; endpoint_index: number }> = [];
   // Selama handshake, tutup-koneksi adalah bagian dari kegagalan
   // handshake itu sendiri — bukan akhir sesi cdp-closed.
   let handshaking = true;
@@ -364,6 +372,9 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
     let endExtra: Record<string, unknown> = { ...extra };
     if (sessionError !== null) {
       endExtra = { ...endExtra, error: sessionError };
+    }
+    if (closedEndpoints.length > 0) {
+      endExtra = { ...endExtra, closedEndpoints: [...closedEndpoints] };
     }
     if (tailer !== null) {
       const stats = await tailer.stop();
@@ -405,21 +416,39 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
       lightpandaVersion = versions[0] as string;
     }
     clients = opts.cdpUrls.map((u) => new CdpClient(u));
-    // Bila server CDP mana pun menutup koneksi SETELAH handshake
-    // berhasil, akhiri sesi dengan anggun dan sebutkan koneksinya.
+    alive = clients.map(() => true);
+    // Bila server CDP menutup koneksi SETELAH handshake berhasil:
+    // tanpa --survive, akhiri sesi dengan anggun dan sebutkan
+    // koneksinya; dengan --survive, catat penutupan sebagai baris
+    // penanda dan lanjutkan selama masih ada koneksi yang hidup.
     clients.forEach((client, index) => {
       client.onClose(() => {
         if (!shutdownRequested && !handshaking) {
+          const url = opts.cdpUrls[index] as string;
+          alive[index] = false;
+          const remaining = alive.filter(Boolean).length;
+          if (opts.survive && remaining > 0) {
+            closedEndpoints.push({ endpoint: url, endpoint_index: index });
+            writeRow(
+              "tracer.connection_closed",
+              { endpoint: url, endpoint_index: index, remaining },
+              { endpoint: url, endpointIndex: index, version: versions[index] as string },
+            );
+            console.error(
+              `lp-tracer: koneksi CDP ${url} (indeks ${index}) ditutup server, ${remaining} koneksi tersisa — sesi berlanjut (--survive).`,
+            );
+            return;
+          }
           sessionError = {
             code: "E_CDP_CLOSED",
-            endpoint: opts.cdpUrls[index],
+            endpoint: url,
             endpoint_index: index,
           };
           console.error(
-            `lp-tracer: [E_CDP_CLOSED] koneksi CDP ${opts.cdpUrls[index]} (indeks ${index}) ditutup server, mengakhiri sesi.`,
+            `lp-tracer: [E_CDP_CLOSED] koneksi CDP ${url} (indeks ${index}) ditutup server, mengakhiri sesi.`,
           );
           void shutdown("cdp-closed", 0, {
-            endpoint: opts.cdpUrls[index],
+            endpoint: url,
             endpoint_index: index,
           }).then(() => process.exit(exitCode));
         }
