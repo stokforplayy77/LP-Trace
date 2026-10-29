@@ -6,11 +6,17 @@ import {
 	categoryOf,
 	consoleEntries,
 	consoleLevel,
+	durationMs,
+	endpointKey,
+	endpointsOf,
 	filterConsole,
 	filterRows,
 	groupWaterfall,
+	hasResumedMarker,
 	parseTrace,
 	parseTraceLine,
+	relativeSeconds,
+	shortEndpointLabel,
 	summarize,
 	toCSV,
 	toHAR
@@ -146,7 +152,7 @@ test('CSV: header + baris + escaping koma/kutip', () => {
 	const { rows } = parseTrace(EXAMPLE);
 	const csv = toCSV(rows.slice(0, 2));
 	const lines = csv.split('\r\n');
-	assert.equal(lines[0], 'seq,ts,mono_ms,session,lightpanda_version,type,ringkasan');
+	assert.equal(lines[0], 'seq,ts,mono_ms,session,lightpanda_version,endpoint,endpoint_index,type,ringkasan');
 	assert.ok(lines[1].includes('tracer.session_started'));
 	const tricky = parseTraceLine(
 		'{"ts":"x","mono_ms":0,"seq":1,"session":"s","lightpanda_version":"1.0.2","type":"Runtime.consoleAPICalled","data":{"type":"log","args":["a, \\"b\\""]}}'
@@ -271,9 +277,107 @@ test('F5 CSV: baris agen ikut dengan ringkasannya', () => {
 	const { rows } = parseTrace(AGENT_EXAMPLE);
 	const csv = toCSV(rows);
 	const lines = csv.split('\r\n');
-	assert.equal(lines[0], 'seq,ts,mono_ms,session,lightpanda_version,type,ringkasan');
+	assert.equal(lines[0], 'seq,ts,mono_ms,session,lightpanda_version,endpoint,endpoint_index,type,ringkasan');
 	assert.ok(csv.includes('agent.tool'));
 	assert.ok(csv.includes('goto (4 ms)'));
 	assert.ok(csv.includes('agen selesai: 3 tool call, 2 model call, 18 token'));
 	assert.ok(csv.includes('baris agen tak dikenal: model'));
+});
+
+test('MS parse: field endpoint/endpoint_index dibaca; trace lama default kosong/-1', () => {
+	const line =
+		'{"ts":"2026-10-29T05:44:05.153Z","mono_ms":0,"seq":1,"session":"s1","lightpanda_version":"1.0.2","endpoint":"ws://127.0.0.1:9222","endpoint_index":1,"type":"Network.requestWillBeSent","data":{}}';
+	const row = parseTraceLine(line);
+	assert.equal(row.endpoint, 'ws://127.0.0.1:9222');
+	assert.equal(row.endpoint_index, 1);
+	const old = parseTraceLine(
+		'{"ts":"2026-10-29T05:44:06.102Z","mono_ms":949,"seq":2,"session":"s1","lightpanda_version":"1.0.2","type":"Network.requestWillBeSent","data":{}}'
+	);
+	assert.equal(old.endpoint, '');
+	assert.equal(old.endpoint_index, -1);
+});
+
+test('MS endpointsOf: URL duplikat dilabeli #indeks, URL tunggal polos', () => {
+	const mk = (endpoint, endpoint_index, seq) =>
+		`{"ts":"2026-10-29T05:44:05.153Z","mono_ms":0,"seq":${seq},"session":"s1","lightpanda_version":"1.0.2","endpoint":"${endpoint}","endpoint_index":${endpoint_index},"type":"Network.requestWillBeSent","data":{}}`;
+	const rows = parseTrace(
+		[
+			mk('ws://127.0.0.1:9222', 0, 1),
+			mk('ws://127.0.0.1:9222', 1, 2),
+			mk('ws://127.0.0.1:9223', 2, 3)
+		].join('\n')
+	).rows;
+	const eps = endpointsOf(rows);
+	assert.deepEqual(
+		eps.map((e) => e.label),
+		['ws://127.0.0.1:9222 #0', 'ws://127.0.0.1:9222 #1', 'ws://127.0.0.1:9223']
+	);
+	assert.equal(shortEndpointLabel('ws://127.0.0.1:9222'), '127.0.0.1:9222');
+	assert.equal(shortEndpointLabel(''), 'tracer');
+});
+
+test('MS filterRows: filter endpoint hanya menyaring baris CDP; baris tracer selalu lolos', () => {
+	const mk = (type, endpoint, endpoint_index, seq) =>
+		`{"ts":"2026-10-29T05:44:05.153Z","mono_ms":0,"seq":${seq},"session":"s1","lightpanda_version":"1.0.2","endpoint":"${endpoint}","endpoint_index":${endpoint_index},"type":"${type}","data":{}}`;
+	const rows = parseTrace(
+		[
+			mk('tracer.session_started', '', -1, 1),
+			mk('Network.requestWillBeSent', 'ws://127.0.0.1:9222', 0, 2),
+			mk('Network.requestWillBeSent', 'ws://127.0.0.1:9222', 1, 3)
+		].join('\n')
+	).rows;
+	const filtered = filterRows(rows, '', [], [endpointKey('ws://127.0.0.1:9222', 0)]);
+	assert.deepEqual(
+		filtered.map((r) => r.seq),
+		[1, 2]
+	);
+	assert.equal(hasResumedMarker(rows), false);
+	const resumedRows = parseTrace(
+		'{"ts":"2026-10-29T05:44:05.153Z","mono_ms":0,"seq":1,"session":"s1","lightpanda_version":"1.0.2","type":"tracer.session_resumed","data":{}}'
+	).rows;
+	assert.equal(hasResumedMarker(resumedRows), true);
+});
+
+test('MS waktu relatif: dari ts, benar walau mono_ms reset di batas resume', () => {
+	const mk = (ts, mono_ms, seq) =>
+		`{"ts":"${ts}","mono_ms":${mono_ms},"seq":${seq},"session":"s1","lightpanda_version":"1.0.2","type":"Network.requestWillBeSent","data":{}}`;
+	const rows = parseTrace(
+		[
+			mk('2026-10-29T07:00:00.000Z', 0, 1),
+			mk('2026-10-29T07:00:01.000Z', 900, 2),
+			mk('2026-10-29T07:00:01.500Z', 0, 3),
+			mk('2026-10-29T07:00:02.000Z', 300, 4)
+		].join('\n')
+	).rows;
+	assert.deepEqual(
+		rows.map((r) => relativeSeconds(rows, r)),
+		[0, 1, 1.5, 2]
+	);
+	assert.equal(durationMs(rows), 2000);
+});
+
+test('MS CSV: header memuat kolom endpoint', () => {
+	const csv = toCSV(parseTrace(EXAMPLE).rows);
+	assert.ok(csv.startsWith('seq,ts,mono_ms,session,lightpanda_version,endpoint,endpoint_index,type,ringkasan'));
+});
+
+test('MS waterfall: endpoint terbawa; durasi negatif lintas resume menjadi null', () => {
+	const mk = (type, mono_ms, seq, endpoint, endpoint_index, data) =>
+		`{"ts":"2026-10-29T07:00:00.000Z","mono_ms":${mono_ms},"seq":${seq},"session":"s1","lightpanda_version":"1.0.2","endpoint":"${endpoint}","endpoint_index":${endpoint_index},"type":"${type}","data":${JSON.stringify(data)}}`;
+	const rows = parseTrace(
+		[
+			mk('Network.requestWillBeSent', 2000, 1, 'ws://127.0.0.1:9222', 0, {
+				requestId: 'LID-9',
+				url: 'https://example.com/',
+				method: 'GET',
+				type: 'Document'
+			}),
+			mk('Network.loadingFinished', 50, 2, 'ws://127.0.0.1:9222', 0, { requestId: 'LID-9' })
+		].join('\n')
+	).rows;
+	const wf = groupWaterfall(rows);
+	assert.equal(wf.length, 1);
+	assert.equal(wf[0].endpoint, 'ws://127.0.0.1:9222');
+	assert.equal(wf[0].endpoint_index, 0);
+	assert.equal(wf[0].totalMs, null);
 });
