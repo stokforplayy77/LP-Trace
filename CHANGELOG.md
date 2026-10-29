@@ -5,6 +5,10 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-29
+
+Rilis publik pertama.
+
 ### Added
 
 - Error terbedakan + retry startup (lihat `docs/ERROR-DESIGN.md`):
@@ -64,13 +68,6 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
   `lp-trace-mcp`, skrip `prepublishOnly` ditambahkan, dan field
   `repository`/`bugs` dilengkapi. `lp-trace-viewer` tetap privat karena
   didistribusikan sebagai situs statis, bukan paket npm.
-
-## [0.1.0] - 2026-10-29
-
-Rilis publik pertama.
-
-### Added
-
 - `lp-tracer` (M1): tracer CDP eksternal untuk Lightpanda 1.0.2 — handshake
   Target wajib, rekaman event ke JSONL teredaksi, overhead terukur 1,11%.
 - `lp-trace-viewer` (M2): penampil trace statis — timeline, waterfall dari
