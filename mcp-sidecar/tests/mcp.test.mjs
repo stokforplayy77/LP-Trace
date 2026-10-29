@@ -769,3 +769,60 @@ test("MS anotasi: baris anotasi membawa field endpoint kosong/-1", async (t) => 
     assert.equal(rows[1].endpoint_index, -1);
   });
 });
+
+test("ROBUST sessionError: dari session_ended terakhir, null bila berakhir bersih", async (t) => {
+  const dir = await tmpDir(t);
+  const row = (seq, mono_ms, type, data) =>
+    JSON.stringify({
+      ts: "2026-10-29T07:00:00.000Z",
+      mono_ms,
+      seq,
+      session: "robust-sidecar",
+      lightpanda_version: "1.0.2",
+      endpoint: "",
+      endpoint_index: -1,
+      type,
+      data,
+    });
+  // Segmen 1 berakhir dengan error, segmen 2 bersih -> null (terakhir menang).
+  const cleanLast = path.join(dir, "clean-last.jsonl");
+  await fs.writeFile(
+    cleanLast,
+    [
+      row(1, 0, "tracer.session_started", {}),
+      row(2, 100, "tracer.session_ended", {
+        reason: "cdp-closed",
+        error: { code: "E_CDP_CLOSED", message: "koneksi CDP ditutup" },
+      }),
+      row(3, 0, "tracer.session_resumed", { previousRows: 2, resumedFromSeq: 3 }),
+      row(4, 100, "tracer.session_ended", { reason: "navigations-done" }),
+    ].join("\n") + "\n",
+    "utf8",
+  );
+  await withClient(cleanLast, async (client) => {
+    const summary = await callToolJson(client, "get_trace_summary", {});
+    assert.equal(summary.sessionError, null);
+  });
+  // Segmen 1 bersih, segmen 2 berakhir dengan error -> error tampil.
+  const errorLast = path.join(dir, "error-last.jsonl");
+  await fs.writeFile(
+    errorLast,
+    [
+      row(1, 0, "tracer.session_started", {}),
+      row(2, 100, "tracer.session_ended", { reason: "navigations-done" }),
+      row(3, 0, "tracer.session_resumed", { previousRows: 2, resumedFromSeq: 3 }),
+      row(4, 100, "tracer.session_ended", {
+        reason: "size-limit",
+        error: { code: "E_TRACE_LIMIT", message: "batas ukuran tercapai" },
+      }),
+    ].join("\n") + "\n",
+    "utf8",
+  );
+  await withClient(errorLast, async (client) => {
+    const summary = await callToolJson(client, "get_trace_summary", {});
+    assert.deepEqual(summary.sessionError, {
+      code: "E_TRACE_LIMIT",
+      message: "batas ukuran tercapai",
+    });
+  });
+});
