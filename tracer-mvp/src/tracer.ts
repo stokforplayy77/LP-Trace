@@ -14,6 +14,7 @@ import {
 } from "./cdp.js";
 import { AgentTraceTailer } from "./agent-trace.js";
 import { redactEvent } from "./redact.js";
+import { TracerError } from "./errors.js";
 import { startLiveServer, type LiveServer } from "./live.js";
 import { BufferedWriter, SizeLimitReached } from "./writer.js";
 
@@ -34,6 +35,10 @@ export interface TracerOptions {
   append: boolean;
   /** Port server SSE live (loopback); null = mode live mati. */
   livePort: number | null;
+  /** Jumlah percobaan ulang startup bila endpoint tidak terjangkau (default 0). */
+  retries: number;
+  /** Jeda dasar antar percobaan ulang, ms (backoff eksponensial, maks 8000). */
+  retryDelayMs: number;
 }
 
 export interface TracerOutcome {
@@ -131,7 +136,8 @@ export async function readResumeState(outputPath: string): Promise<ResumeState |
   try {
     parsed = JSON.parse(last);
   } catch {
-    throw new Error(
+    throw new TracerError(
+      "E_RESUME",
       `resume dibatalkan: baris terakhir ${outputPath} bukan JSON valid; periksa file sebelum melanjutkan sesi ini.`,
     );
   }
@@ -140,7 +146,8 @@ export async function readResumeState(outputPath: string): Promise<ResumeState |
     typeof parsed.type !== "string" ||
     typeof parsed.seq !== "number"
   ) {
-    throw new Error(
+    throw new TracerError(
+      "E_RESUME",
       `resume dibatalkan: baris terakhir ${outputPath} bukan baris trace valid (butuh type string dan seq angka).`,
     );
   }
@@ -161,10 +168,12 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
   if (opts.cdpUrls.length === 0) {
     throw new Error("runTracer membutuhkan minimal satu --cdp.");
   }
-  const versions = await Promise.all(
+  // Versi diambil sebelum sesi dimulai (untuk baris session_started)
+  // dan diambil ulang pada tiap percobaan ulang handshake.
+  let versions = await Promise.all(
     opts.cdpUrls.map((u) => fetchLightpandaVersion(u)),
   );
-  const lightpandaVersion = versions[0] as string;
+  let lightpandaVersion = versions[0] as string;
 
   // Tentukan sesi + seq awal. Resume diputuskan SEBELUM writer dibuka
   // agar kegagalan validasi tidak menyentuh file sama sekali.
@@ -180,7 +189,8 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
         state.session !== null &&
         opts.session !== state.session
       ) {
-        throw new Error(
+        throw new TracerError(
+          "E_RESUME",
           `resume dibatalkan: --session "${opts.session}" berbeda dengan sesi file "${state.session}".`,
         );
       }
@@ -196,6 +206,9 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
   }
 
   let limitReached = false;
+  // Error terstruktur untuk baris session_ended: diisi oleh jalur
+  // kegagalan (handshake/cdp-closed/limit) sebelum shutdown().
+  let sessionError: Record<string, unknown> | null = null;
   // Mode live dimulai SEBELUM file dibuka: port yang sudah dipakai
   // menggagalkan sesi sebelum file trace disentuh.
   let live: LiveServer | null = null;
@@ -213,7 +226,8 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
     opts.maxBytes,
     (err: SizeLimitReached) => {
       limitReached = true;
-      console.error(`lp-tracer: ${err.message}`);
+      sessionError = { code: "E_TRACE_LIMIT", message: err.message };
+      console.error(`lp-tracer: [E_TRACE_LIMIT] ${err.message}`);
     },
     opts.append,
   );
@@ -325,7 +339,12 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
     tailer.start();
   }
 
-  const clients: CdpClient[] = opts.cdpUrls.map((u) => new CdpClient(u));
+  // Klien dibuat ulang pada tiap percobaan handshake (retry); shutdown
+  // selalu menutup kumpulan klien yang sedang aktif.
+  let clients: CdpClient[] = [];
+  // Selama handshake, tutup-koneksi adalah bagian dari kegagalan
+  // handshake itu sendiri — bukan akhir sesi cdp-closed.
+  let handshaking = true;
 
   const shutdown = async (
     reason: string,
@@ -343,6 +362,9 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
       }
     }
     let endExtra: Record<string, unknown> = { ...extra };
+    if (sessionError !== null) {
+      endExtra = { ...endExtra, error: sessionError };
+    }
     if (tailer !== null) {
       const stats = await tailer.stop();
       endExtra = {
@@ -371,25 +393,38 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
 
-  // Bila server CDP mana pun menutup koneksi, akhiri sesi dengan anggun
-  // dan sebutkan koneksi yang menutup.
-  clients.forEach((client, index) => {
-    client.onClose(() => {
-      if (!shutdownRequested) {
-        console.error(
-          `lp-tracer: koneksi CDP ${opts.cdpUrls[index]} (indeks ${index}) ditutup server, mengakhiri sesi.`,
-        );
-        void shutdown("cdp-closed", 0, {
-          endpoint: opts.cdpUrls[index],
-          endpoint_index: index,
-        }).then(() => process.exit(exitCode));
-      }
+  // Satu percobaan koneksi + handshake + enable untuk semua endpoint.
+  // Melempar TracerError E_CDP_UNREACHABLE (dapat di-retry) atau
+  // TracerError E_HANDSHAKE (fatal langsung). Membuat klien segar dan
+  // mendaftarkan handler event/tutup pada tiap percobaan.
+  const connectAll = async (isRetry: boolean): Promise<void> => {
+    if (isRetry) {
+      versions = await Promise.all(
+        opts.cdpUrls.map((u) => fetchLightpandaVersion(u)),
+      );
+      lightpandaVersion = versions[0] as string;
+    }
+    clients = opts.cdpUrls.map((u) => new CdpClient(u));
+    // Bila server CDP mana pun menutup koneksi SETELAH handshake
+    // berhasil, akhiri sesi dengan anggun dan sebutkan koneksinya.
+    clients.forEach((client, index) => {
+      client.onClose(() => {
+        if (!shutdownRequested && !handshaking) {
+          sessionError = {
+            code: "E_CDP_CLOSED",
+            endpoint: opts.cdpUrls[index],
+            endpoint_index: index,
+          };
+          console.error(
+            `lp-tracer: [E_CDP_CLOSED] koneksi CDP ${opts.cdpUrls[index]} (indeks ${index}) ditutup server, mengakhiri sesi.`,
+          );
+          void shutdown("cdp-closed", 0, {
+            endpoint: opts.cdpUrls[index],
+            endpoint_index: index,
+          }).then(() => process.exit(exitCode));
+        }
+      });
     });
-  });
-
-  // Handshake semua koneksi berurutan; kegagalan pada koneksi mana pun
-  // bersifat fatal dan menyebut endpoint + indeksnya.
-  try {
     for (let i = 0; i < clients.length; i++) {
       const client = clients[i] as CdpClient;
       const url = opts.cdpUrls[i] as string;
@@ -407,19 +442,71 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
         await performHandshake(client);
         await enableDomains(client);
       } catch (e) {
+        if (e instanceof TracerError && e.code === "E_CDP_UNREACHABLE") {
+          // Teks diawali "handshake gagal..." agar konsisten dengan
+          // pesan kegagalan handshake lama (diuji M1 uji 4a).
+          throw new TracerError(
+            "E_CDP_UNREACHABLE",
+            `handshake gagal pada langkah endpoint ${url} (indeks ${i}): ${e.message}`,
+            { endpoint: url, endpoint_index: i },
+          );
+        }
         const message = e instanceof Error ? e.message : String(e);
-        throw new HandshakeError(
-          `endpoint ${url} (indeks ${i})`,
-          message,
+        const step = e instanceof HandshakeError ? e.step : "handshake";
+        throw new TracerError(
+          "E_HANDSHAKE",
+          `handshake gagal pada langkah endpoint ${url} (indeks ${i}): ${message}`,
+          { endpoint: url, endpoint_index: i, step },
         );
       }
     }
-  } catch (e) {
+  };
+
+  // Handshake semua koneksi; hanya E_CDP_UNREACHABLE yang di-retry
+  // (backoff eksponensial). Kegagalan pada koneksi mana pun bersifat
+  // fatal dan menyebut endpoint + indeksnya.
+  const maxAttempts = opts.retries + 1;
+  let handshakeError: unknown = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      await connectAll(attempt > 0);
+      handshakeError = null;
+      break;
+    } catch (e) {
+      handshakeError = e;
+      for (const c of clients) {
+        try {
+          c.close();
+        } catch {
+          /* abaikan */
+        }
+      }
+      const retryable =
+        e instanceof TracerError && e.code === "E_CDP_UNREACHABLE";
+      if (!retryable || attempt === maxAttempts - 1) break;
+      const delay = Math.min(opts.retryDelayMs * 2 ** attempt, 8000);
+      console.error(
+        `lp-tracer: [E_CDP_UNREACHABLE] ${e.message} — mencoba lagi (percobaan ${attempt + 2}/${maxAttempts}) setelah ${delay} ms.`,
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  handshaking = false;
+  if (handshakeError !== null) {
+    const e = handshakeError;
     const message = e instanceof Error ? e.message : String(e);
-    console.error(`lp-tracer: ${message}`);
-    if (e instanceof HandshakeError) {
+    const code = e instanceof TracerError ? e.code : "E_HANDSHAKE";
+    const details =
+      e instanceof TracerError ? e.details : {};
+    sessionError = { code, message, ...details };
+    console.error(`lp-tracer: [${code}] ${message}`);
+    if (code === "E_HANDSHAKE") {
       console.error(
         "lp-tracer: handshake Target gagal — tracer berhenti tanpa event dari koneksi yang gagal (lihat Bab 3.3 dokumen perancangan).",
+      );
+    } else {
+      console.error(
+        `lp-tracer: percobaan koneksi habis (${maxAttempts}x) — periksa 'lightpanda serve' berjalan di alamat yang dituju.`,
       );
     }
     await shutdown("handshake-failed", 1);
@@ -453,7 +540,7 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
         await client.send("Page.navigate", { url });
       } catch (e) {
         console.error(
-          `lp-tracer: Page.navigate ke ${url} (koneksi ${connIndex}) gagal: ${e instanceof Error ? e.message : String(e)}`,
+          `lp-tracer: [E_NAVIGATE] Page.navigate ke ${url} (koneksi ${connIndex}) gagal: ${e instanceof Error ? e.message : String(e)}`,
         );
       }
       await new Promise((r) => setTimeout(r, opts.waitMs));
