@@ -67,6 +67,18 @@ node dist/cli.js --cdp ws://127.0.0.1:9222 --output ./trace.jsonl \
   --navigate http://127.0.0.1:8771/throw.html --wait-ms 1200
 ```
 
+### Docker
+
+Image `lp-trace-tracer` menjalankan Lightpanda 1.0.2 dan tracer dalam
+satu container (lihat `docker/Dockerfile.tracer` di akar repo; konteks
+build = akar repo):
+
+```bash
+docker build -f docker/Dockerfile.tracer -t lp-trace-tracer .
+docker run --rm -v "$PWD/traces:/traces" lp-trace-tracer \
+  --output /traces/trace.jsonl --navigate https://example.com
+```
+
 ### Flag
 
 | Flag | Keterangan |
