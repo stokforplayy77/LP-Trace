@@ -409,6 +409,22 @@ test("CLI --help keluar nol dan menyebut kedua tool", async () => {
   assert.match(stdout, /annotate_trace/);
 });
 
+test("versi CLI dan server MCP sama dengan versi package.json", async () => {
+  const pkg = JSON.parse(
+    await fs.readFile(new URL("../package.json", import.meta.url), "utf8"),
+  );
+  const { stdout } = await execFileAsync(process.execPath, [
+    SERVER,
+    "--version",
+  ]);
+  assert.equal(stdout.trim(), `lp-trace-mcp ${pkg.version}`);
+  await withClient(REAL_FIXTURE, async (client) => {
+    const serverVersion = client.getServerVersion();
+    assert.equal(serverVersion?.name, "lp-trace-mcp");
+    assert.equal(serverVersion?.version, pkg.version);
+  });
+});
+
 // ---------- F5: agregat agen ----------
 
 test("F5 get_trace_summary: field agent dari baris CDP + agen", async (t) => {
