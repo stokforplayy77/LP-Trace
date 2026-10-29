@@ -1,0 +1,42 @@
+# Changelog
+
+Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [Unreleased]
+
+### Added
+
+- CI GitHub Actions (`.github/workflows/ci.yml`): uji tracer (M1, dengan
+  Lightpanda 1.0.2 asli), penampil (M2, termasuk `svelte-check` dan
+  build), dan sidecar MCP (M3) pada Node.js 22 dan 24, ditambah build
+  ketiga image Docker tanpa push.
+- Workflow rilis (`.github/workflows/release.yml`): pada tag `v*`, image
+  Docker di-push ke GHCR dan paket `lp-tracer` + `lp-trace-mcp`
+  diterbitkan ke npm lewat Trusted Publishing (OIDC). Publish npm butuh
+  penyiapan satu kali di npmjs.com: daftarkan repo ini sebagai trusted
+  publisher untuk kedua paket tersebut. Tanpa penyiapan itu, job npm
+  gagal dengan error autentikasi yang jelas; job Docker tidak terpengaruh.
+- Image Docker: `lp-trace-tracer` (Lightpanda 1.0.2 + tracer, dengan
+  entrypoint yang menjalankan `serve` + tracer), `lp-trace-viewer`
+  (build statis + nginx), `lp-trace-mcp` (sidecar stdio).
+- Kesiapan publish npm: field `private` dihapus dari `lp-tracer` dan
+  `lp-trace-mcp`, skrip `prepublishOnly` ditambahkan, dan field
+  `repository`/`bugs` dilengkapi. `lp-trace-viewer` tetap privat karena
+  didistribusikan sebagai situs statis, bukan paket npm.
+
+## [0.1.0] - 2026-10-29
+
+Rilis publik pertama.
+
+### Added
+
+- `lp-tracer` (M1): tracer CDP eksternal untuk Lightpanda 1.0.2 — handshake
+  Target wajib, rekaman event ke JSONL teredaksi, overhead terukur 1,11%.
+- `lp-trace-viewer` (M2): penampil trace statis — timeline, waterfall dari
+  stempel waktu tracer, panel konsol, pencarian, ekspor CSV dan HAR
+  subset best-effort.
+- `lp-trace-mcp` (M3): sidecar MCP (stdio) dengan tepat dua tool,
+  `get_trace_summary` dan `annotate_trace`.
+- Dokumen perancangan v1.1 beserta laporan verifikasi M0/M0b di `docs/`.
+- Lisensi Apache-2.0.
