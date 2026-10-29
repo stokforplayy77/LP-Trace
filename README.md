@@ -19,10 +19,10 @@ meringkas dan menganotasi trace tersebut.
 
 | Folder | Paket | Isi |
 |---|---|---|
-| `tracer-mvp/` | `lp-tracer` | Tracer CDP: handshake Target + `sessionId`, rekam event ke JSONL teredaksi, redaksi rahasia default (M1) |
-| `viewer/` | `lp-trace-viewer` | Penampil trace statis: timeline, waterfall jaringan, panel konsol, pencarian, ekspor CSV/HAR (M2) |
-| `mcp-sidecar/` | `lp-trace-mcp` | Sidecar MCP (stdio) dengan tepat dua tool: `get_trace_summary` dan `annotate_trace` (M3) |
-| `docs/` | — | Dokumen perancangan v1.1 (Markdown + PDF) dan laporan verifikasi M0/M0b |
+| `tracer-mvp/` | `lp-tracer` | Tracer CDP: handshake Target + `sessionId`, rekam event ke JSONL teredaksi, redaksi rahasia default (M1); flag `--agent-trace` mengorelasikan langkah agen dari file `agent --trace` upstream (F5) |
+| `viewer/` | `lp-trace-viewer` | Penampil trace statis: timeline, waterfall jaringan, panel konsol, pencarian, ekspor CSV/HAR (M2); kategori `agen` + Panel Agen (F5) |
+| `mcp-sidecar/` | `lp-trace-mcp` | Sidecar MCP (stdio) dengan tepat dua tool: `get_trace_summary` dan `annotate_trace` (M3); filter kategori `agent` + agregat langkah agen (F5) |
+| `docs/` | — | Dokumen perancangan v1.1 (Markdown + PDF), laporan verifikasi M0/M0b, dan desain F5 (`F5-DESIGN.md`) |
 
 Rancangan lengkap, termasuk keputusan desain, skema JSONL, dan aturan
 redaksi, ada di [docs/dokumen-perancangan-v1.1.md](docs/dokumen-perancangan-v1.1.md).
@@ -42,6 +42,15 @@ redaksi, ada di [docs/dokumen-perancangan-v1.1.md](docs/dokumen-perancangan-v1.1
   `"warning"`, bukan `"warn"`.
 - Overhead tracer terukur 1,11% (median 5 ulangan, beban kerja tetap —
   lihat `tracer-mvp/M1-HASIL.md`).
+- F5 terverifikasi: format file `agent --trace` diprobe dari run
+  sungguhan Lightpanda 1.0.2 (skrip PandaScript, tanpa LLM), dan uji
+  live membuktikan langkah agen (goto/extract/evaluate) tercatat
+  sebagai baris `agent.*` di antara event CDP. Bentuk baris panggilan
+  model belum terverifikasi (tidak ada LLM pada probe) dan ditangani
+  sebagai `agent.unknown` tanpa payload. Korelasi pasca-hoc atas file
+  trace agen yang sudah selesai bersifat perkiraan (langkah
+  mengelompok pada waktu ingest); korelasi waktu yang akurat butuh
+  tracer berjalan bersamaan dengan agen.
 - Belum diuji / tidak diklaim: Playwright, tampilan penampil di HP
   nyata, pembukaan penampil lewat `file://`, dan integrasi dengan
   aplikasi klien MCP tertentu.
@@ -66,6 +75,19 @@ npx serve build
 # 3b. Atau baca lewat sidecar MCP (stdio)
 cd ../mcp-sidecar && npm install && npm run build
 node dist/cli.js --trace /path/ke/trace.jsonl
+```
+
+Korelasi dengan agen bawaan (F5): jalankan tracer dengan
+`--agent-trace` menunjuk file yang sama dengan flag `--trace` pada
+`lightpanda agent`, selagi agen berjalan:
+
+```bash
+# Terminal 1: tracer (tetap berjalan dengan --stay)
+node dist/cli.js --cdp ws://127.0.0.1:9222 --output ./trace.jsonl \
+  --agent-trace ./agent-trace.jsonl --stay
+
+# Terminal 2: agen (menulis ./agent-trace.jsonl)
+LIGHTPANDA_DISABLE_TELEMETRY=true lightpanda agent --task "..." --trace ./agent-trace.jsonl
 ```
 
 Detail tiap paket, termasuk flag, format JSONL, aturan redaksi, dan
