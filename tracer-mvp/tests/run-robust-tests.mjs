@@ -33,6 +33,22 @@ function check(name, cond, detail = "") {
   }
 }
 
+// Build (tsc) dijalankan dulu, seperti run-version-tests.mjs dan
+// run-m1-tests.mjs: di checkout bersih (CI), dist/ belum ada karena
+// gitignore, dan spawn dist/cli.js yang tidak ada mati seketika —
+// tanpa build, seluruh rangkaian ini gagal di CI padahal tracernya
+// sehat (pelajaran 29 Okt 2026: badge CI "failing" dari sini).
+const buildCode = await new Promise((resolve) => {
+  const child = spawn(join(ROOT, "node_modules", ".bin", "tsc"), [], { cwd: ROOT });
+  child.on("close", (code) => resolve(code));
+  child.on("error", () => resolve(1));
+});
+check("build tsc bersih", buildCode === 0);
+if (buildCode !== 0) {
+  console.error("Uji robust: build gagal, berhenti.");
+  process.exit(1);
+}
+
 async function findLightpanda() {
   if (process.env.LP_BIN) return process.env.LP_BIN;
   const onPath = await new Promise((resolve) => {
@@ -83,6 +99,13 @@ function startTracer(args, outFile) {
 }
 
 async function waitForExit(child, timeoutMs = 30000) {
+  // Anak bisa sudah keluar sebelum pemanggil sempat memasang listener
+  // (mis. dist/cli.js tidak ada sehingga spawn mati seketika): tanpa
+  // penjaga ini, event 'exit' terlewat dan penantian menggantung
+  // sampai timeout — persis gejala CI 29 Okt 2026.
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return { code: child.exitCode, signal: child.signalCode };
+  }
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       try {
@@ -114,6 +137,15 @@ async function waitForRows(outFile, minRows, timeoutMs = 10000) {
     await sleep(250);
   }
   return 0;
+}
+
+async function rowsCount(outFile) {
+  try {
+    const text = await readFile(outFile, "utf8");
+    return text.split("\n").filter(Boolean).length;
+  } catch {
+    return 0;
+  }
 }
 
 async function readRows(outFile) {
@@ -237,6 +269,7 @@ try {
       outFile,
     );
     await waitForRows(outFile, 3);
+    check("tracer menulis >= 3 baris sebelum Playwright", (await rowsCount(outFile)) >= 3);
     let pw = { connect: false, goto: false, title: null };
     try {
       const browser = await chromium.connectOverCDP(`http://127.0.0.1:${SERVE_PORT}`, {
@@ -276,6 +309,7 @@ try {
       outFile,
     );
     await waitForRows(outFile, 3);
+    check("tracer menulis >= 3 baris sebelum sesi panjang", (await rowsCount(outFile)) >= 3);
     const stopFlag = { done: false };
     const rssPromise = sampleRssKb(tracer.pid, stopFlag, []);
     await sleep(LONG_MS);
