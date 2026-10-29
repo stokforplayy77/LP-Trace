@@ -63,6 +63,11 @@ OPSI
                        penolakan handshake langsung fatal.
   --retry-delay-ms <n> Jeda dasar antar percobaan ulang, ms (default 500;
                        backoff eksponensial, maks 8000 ms).
+  --survive            Mode bertahan: bila satu koneksi CDP ditutup
+                       server, sesi berlanjut dengan koneksi lain yang
+                       masih hidup (penutupan dicatat sebagai baris
+                       tracer.connection_closed). Tanpa flag ini,
+                       penutupan koneksi mana pun mengakhiri sesi.
   --help               Tampilkan bantuan ini.
   --version            Tampilkan versi.
 
@@ -104,6 +109,7 @@ interface ParsedArgs {
   replayReport: string | null;
   retries: number;
   retryDelayMs: number;
+  survive: boolean;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -123,6 +129,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     replayReport: null,
     retries: 0,
     retryDelayMs: DEFAULT_RETRY_DELAY_MS,
+    survive: false,
   };
   const takeValue = (flag: string, i: number): string => {
     const v = argv[i + 1];
@@ -217,6 +224,9 @@ function parseArgs(argv: string[]): ParsedArgs {
         args.retryDelayMs = n;
         break;
       }
+      case "--survive":
+        args.survive = true;
+        break;
       default:
         fail(`argumen tidak dikenal: ${a}.`);
     }
@@ -269,6 +279,7 @@ async function main(): Promise<void> {
         livePort: args.livePort,
         retries: args.retries,
         retryDelayMs: args.retryDelayMs,
+        survive: args.survive,
         reportPath: args.replayReport,
       });
       if (replayed.report !== null) {
@@ -309,6 +320,7 @@ async function main(): Promise<void> {
       livePort: args.livePort,
       retries: args.retries,
       retryDelayMs: args.retryDelayMs,
+      survive: args.survive,
     });
   } catch (e) {
     // Kegagalan sebelum sesi dimulai (mis. validasi resume): pesan rapi, keluar 1.
