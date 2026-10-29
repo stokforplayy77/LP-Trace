@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+	agentEntries,
 	categoryOf,
 	consoleEntries,
 	consoleLevel,
@@ -189,4 +190,90 @@ test('HAR: subset best-effort — dns/connect/ssl -1, ukuran -1, ada komentar', 
 	assert.equal(first.response.bodySize, -1);
 	assert.equal(first.time, 1947 - 949);
 	assert.ok(String(log.comment).includes('best-effort'));
+});
+
+// ---------- F5: baris agen ----------
+
+const AGENT_EXAMPLE = [
+	'{"ts":"2026-10-29T06:00:00.000Z","mono_ms":0,"seq":1,"session":"f5","lightpanda_version":"1.0.2","type":"tracer.session_started","data":{"cdp":"ws://127.0.0.1:9222"}}',
+	'{"ts":"2026-10-29T06:00:00.010Z","mono_ms":10,"seq":2,"session":"f5","lightpanda_version":"1.0.2","type":"tracer.agent_attached","data":{"path":"./agent-trace.jsonl"}}',
+	'{"ts":"2026-10-29T06:00:00.020Z","mono_ms":20,"seq":3,"session":"f5","lightpanda_version":"1.0.2","type":"agent.run","data":{"provider":"none","model":""}}',
+	'{"ts":"2026-10-29T06:00:00.030Z","mono_ms":30,"seq":4,"session":"f5","lightpanda_version":"1.0.2","type":"agent.tool","data":{"step":1,"name":"goto","ms":4,"agent_t":9,"error":false,"navigated":true,"result_bytes":6,"page":{"url":"http://127.0.0.1:8765/ok.html","httpStatus":200,"title":"F5 OK"}}}',
+	'{"ts":"2026-10-29T06:00:00.040Z","mono_ms":40,"seq":5,"session":"f5","lightpanda_version":"1.0.2","type":"agent.tool","data":{"step":2,"name":"extract","ms":0,"agent_t":10,"error":false,"navigated":false,"result_bytes":38,"args":{"schema":"{\\"title\\":\\"title\\"}"},"page":{"url":"http://127.0.0.1:8765/ok.html","httpStatus":200,"title":"F5 OK"}}}',
+	'{"ts":"2026-10-29T06:00:00.050Z","mono_ms":50,"seq":6,"session":"f5","lightpanda_version":"1.0.2","type":"agent.tool","data":{"step":3,"name":"evaluate","ms":2,"agent_t":11,"error":true,"navigated":false,"result_bytes":342,"args":{"script":"throw new Error(\\"boom\\")"},"page":{"url":"http://127.0.0.1:8765/missing.html","httpStatus":404,"title":""}}}',
+	'{"ts":"2026-10-29T06:00:00.060Z","mono_ms":60,"seq":7,"session":"f5","lightpanda_version":"1.0.2","type":"agent.unknown","data":{"agent_type":"model","agent_t":12}}',
+	'{"ts":"2026-10-29T06:00:00.070Z","mono_ms":70,"seq":8,"session":"f5","lightpanda_version":"1.0.2","type":"agent.end","data":{"model_calls":2,"tool_calls":3,"tokens":{"input":10,"cached":2,"cache_creation":1,"output":5}}}',
+	'{"ts":"2026-10-29T06:00:00.080Z","mono_ms":80,"seq":9,"session":"f5","lightpanda_version":"1.0.2","type":"tracer.session_ended","data":{"reason":"signal-SIGINT","agentLines":5,"agentSkipped":0,"agentResets":0}}'
+].join('\n');
+
+test('F5 kategori: semua tipe agent.* -> agen, penanda tracer tetap tracer', () => {
+	assert.equal(categoryOf('agent.tool'), 'agen');
+	assert.equal(categoryOf('agent.run'), 'agen');
+	assert.equal(categoryOf('agent.end'), 'agen');
+	assert.equal(categoryOf('agent.unknown'), 'agen');
+	assert.equal(categoryOf('tracer.agent_attached'), 'tracer');
+	assert.equal(categoryOf('tracer.agent_reset'), 'tracer');
+	const { rows } = parseTrace(AGENT_EXAMPLE);
+	assert.equal(filterRows(rows, '', ['agen']).length, 6);
+	assert.equal(filterRows(rows, '', ['tracer']).length, 3);
+});
+
+test('F5 ringkasan: agent.tool/run/end/unknown', () => {
+	const { rows } = parseTrace(AGENT_EXAMPLE);
+	const byType = (t) => rows.find((r) => r.type === t);
+	assert.equal(summarize(byType('agent.tool')), 'goto (4 ms) — F5 OK');
+	const errorTool = rows.filter((r) => r.type === 'agent.tool')[2];
+	assert.equal(summarize(errorTool), 'evaluate (2 ms) — error');
+	assert.equal(summarize(byType('agent.run')), 'agen mulai (none)');
+	assert.equal(
+		summarize(byType('agent.end')),
+		'agen selesai: 3 tool call, 2 model call, 18 token'
+	);
+	assert.equal(summarize(byType('agent.unknown')), 'baris agen tak dikenal: model');
+});
+
+test('F5 agentEntries: hanya agent.tool, terurut, field lengkap', () => {
+	const { rows } = parseTrace(AGENT_EXAMPLE);
+	const entries = agentEntries(rows);
+	assert.equal(entries.length, 3);
+	assert.deepEqual(
+		entries.map((e) => e.name),
+		['goto', 'extract', 'evaluate']
+	);
+	assert.deepEqual(
+		entries.map((e) => e.step),
+		[1, 2, 3]
+	);
+	assert.equal(entries[0].ms, 4);
+	assert.equal(entries[0].pageTitle, 'F5 OK');
+	assert.equal(entries[0].pageUrl, 'http://127.0.0.1:8765/ok.html');
+	assert.equal(entries[0].httpStatus, 200);
+	assert.equal(entries[0].error, false);
+	assert.equal(entries[2].error, true);
+	assert.equal(entries[2].httpStatus, 404);
+	assert.equal(entries[2].pageTitle, '');
+	// Baris non-tool tidak masuk panel agen.
+	assert.equal(agentEntries(parseTrace(EXAMPLE).rows).length, 0);
+});
+
+test('F5 pencarian: nama tool dan judul halaman agen ditemukan', () => {
+	const { rows } = parseTrace(AGENT_EXAMPLE);
+	assert.equal(filterRows(rows, 'evaluate', []).length, 1);
+	assert.equal(filterRows(rows, 'goto', []).length, 1);
+	assert.equal(filterRows(rows, 'f5 ok', []).length, 2);
+	assert.equal(filterRows(rows, 'missing.html', []).length, 1);
+	// Kombinasi kategori + query.
+	assert.equal(filterRows(rows, 'extract', ['agen']).length, 1);
+	assert.equal(filterRows(rows, 'extract', ['network']).length, 0);
+});
+
+test('F5 CSV: baris agen ikut dengan ringkasannya', () => {
+	const { rows } = parseTrace(AGENT_EXAMPLE);
+	const csv = toCSV(rows);
+	const lines = csv.split('\r\n');
+	assert.equal(lines[0], 'seq,ts,mono_ms,session,lightpanda_version,type,ringkasan');
+	assert.ok(csv.includes('agent.tool'));
+	assert.ok(csv.includes('goto (4 ms)'));
+	assert.ok(csv.includes('agen selesai: 3 tool call, 2 model call, 18 token'));
+	assert.ok(csv.includes('baris agen tak dikenal: model'));
 });
