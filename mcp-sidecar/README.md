@@ -15,7 +15,9 @@ permintaan, jumlah error, total durasi, hitungan per kategori event,
 hitungan per level konsol, nama host, dan path tanpa query, ditambah
 field `agent` (F5): `{ present, toolCalls, errors, tools, modelCalls,
 tokens, unknownLines }` — agregat langkah agen saja, tanpa argumen,
-hasil, atau URL lengkap.
+hasil, atau URL lengkap — ditambah field `endpoints` (MS): agregat per
+koneksi CDP `{ endpoint, endpoint_index, label, rows, requests, errors }`
+dan flag `resumed` (true bila file memuat `tracer.session_resumed`).
 
 Argumen:
 
@@ -35,8 +37,8 @@ kosong dengan penjelasan, **bukan** error.
 
 Yang **tidak pernah** dikembalikan: isi trace mentah, teks konsol, URL
 lengkap beserta parameter query, nilai header, dan body. Durasi dihitung
-dari `mono_ms`/`ts` tracer (Bab 3.2 Keputusan 4); tidak ada klaim
-breakdown DNS/TLS atau ukuran byte.
+dari selisih `ts` tracer (fallback `mono_ms`; Bab 3.2 Keputusan 4);
+tidak ada klaim breakdown DNS/TLS atau ukuran byte.
 
 ### `annotate_trace`
 
