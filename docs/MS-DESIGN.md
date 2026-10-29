@@ -84,6 +84,11 @@ asalnya; `session_started` memakai versi endpoint pertama.
   menutup). Tidak ada mode "bertahan dengan sisa koneksi" di v1 ini:
   trace parsial yang diam-diam kehilangan satu sisi lebih berbahaya
   daripada sesi yang berakhir terlihat.
+  > Amandemen 0.1.6: mode bertahan tersedia lewat flag `--survive`
+  > (lihat `docs/SURVIVE-DESIGN.md`). Perilaku default di atas
+  > tidak berubah; dengan `--survive`, penutupan satu koneksi
+  > dicatat sebagai baris `tracer.connection_closed` dan sesi
+  > berlanjut selama masih ada koneksi hidup.
 - Batas ukuran (`--max-bytes`) berlaku untuk TOTAL file (semua
   koneksi berbagi satu writer + satu batas).
 
@@ -159,7 +164,9 @@ persisten adalah FILE TRACE:
 
 - Persistensi target browser lintas proses (tidak didukung serve 1.0.2).
 - Berbagi satu target antar-klien (ditolak upstream, probe4).
-- Mode bertahan-dengan-sisa-koneksi saat satu endpoint mati (§4.2).
+- Mode bertahan-dengan-sisa-koneksi saat satu endpoint mati (§4.2)
+  — ditambahkan belakangan lewat `--survive` (0.1.6,
+  `docs/SURVIVE-DESIGN.md`); perilaku default tetap seperti §4.2.
 - Navigasi per-endpoint lewat flag terpisah selain pasangan berurutan
   (§4.1) — pasangan berurutan sudah mencakup kebutuhan uji.
 
