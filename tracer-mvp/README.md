@@ -93,6 +93,8 @@ docker run --rm -v "$PWD/traces:/traces" lp-trace-tracer \
 | `--agent-trace <file>` | Baca (tail) file trace `agent --trace` upstream selama sesi; langkah agen ditulis sebagai baris `agent.*` pada sumbu waktu yang sama (F5, lihat "Hubungan dengan `agent --trace` bawaan"). File boleh belum ada saat tracer mulai. |
 | `--live-port <n>` | Sajikan baris trace secara live lewat SSE di 127.0.0.1:<n> (`GET /events`, `GET /health`). Tanpa flag ini tidak ada server. Port yang sudah dipakai menggagalkan sesi sebelum file trace dibuka. |
 | `--replay <file>` | Mode replay: jalankan ulang navigasi tingkat atas dari file trace (tepat satu `--cdp`; menolak `--navigate`/`--agent-trace`), lalu bandingkan jumlah request + host per langkah. Laporan JSON ke stdout; `--replay-report <file>` menulis laporan yang sama ke file. |
+| `--retry <n>` | Ulangi startup (koneksi + handshake) bila endpoint tidak terjangkau, hingga n kali (default 0 = tanpa retry). Hanya kegagalan koneksi (`E_CDP_UNREACHABLE`) yang di-retry; penolakan handshake (`E_HANDSHAKE`) langsung fatal. |
+| `--retry-delay-ms <n>` | Jeda dasar antar percobaan ulang, ms (default 500; backoff eksponensial, maks 8000 ms). |
 | `--wait-ms <n>` | Jeda antar navigasi (default 1500 ms). |
 | `--stay` | Tetap berjalan setelah navigasi selesai. |
 | `--help`, `--version` | Bantuan / versi. |
@@ -121,7 +123,10 @@ Satu objek JSON per baris:
 Baris internal: `tracer.session_started` (baris pertama),
 `tracer.session_resumed` (baris pertama sesi lanjutan `--append`),
 `tracer.session_ended` (baris terakhir), dan `tracer.annotation`
-(dicadangkan untuk M3; tidak ditulis oleh M1). Contoh sintetis:
+(dicadangkan untuk M3; tidak ditulis oleh M1). Bila sesi berakhir
+karena kegagalan, `session_ended` membawa `data.error = {code, message,
+...}` dengan kode stabil (`E_CDP_UNREACHABLE`, `E_HANDSHAKE`,
+`E_CDP_CLOSED`, `E_TRACE_LIMIT`). Contoh sintetis:
 [`trace-example.jsonl`](trace-example.jsonl).
 
 ## Redaksi dan privasi (Bab 3.6)
