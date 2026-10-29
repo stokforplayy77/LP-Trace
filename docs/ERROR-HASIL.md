@@ -43,6 +43,14 @@ Tahap setelah live/replay, dikerjakan 29 Oktober 2026 atas perintah
 - Regresi penuh hijau: tracer F5 14/14, MS 37/37, live+replay
   31/31, error+retry 25/25, M1 66/66 (benchmark overhead 0,79%,
   gerbang 5%); penampil 27/27; sidecar 17/17.
+- Perbaikan harness pasca-CI: run CI pertama pada head final gagal
+  di job Node 24 — server CDP palsu di uji banjir-event menulis ke
+  soket yang sudah ditutup klien (`ERR_STREAM_WRITE_AFTER_END`,
+  unhandled 'error' event). Bukan bug produk (job Node 22 hijau).
+  Diperbaiki: `sendFrame` memeriksa `socket.destroyed` + try/catch,
+  interval banjir dibersihkan saat soket tutup, dan `socket.on
+  ("error")` ditelan; pengaman yang sama diterapkan ke server palsu
+  `run-live-tests.mjs`. Uji error diulang 3x lokal: 25/25 stabil.
 
 ## Batasan yang tetap berlaku
 
