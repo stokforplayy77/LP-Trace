@@ -1,0 +1,26 @@
+# syntax=docker/dockerfile:1
+# Image sidecar MCP (stdio): lp-trace-mcp.
+# Konteks build = akar repo:  docker build -f docker/Dockerfile.mcp-sidecar .
+# Jalankan: docker run --rm -i -v "$PWD:/traces" lp-trace-mcp \
+#             --trace /traces/trace.jsonl
+# (butuh -i agar stdin MCP tetap terhubung.)
+# Catatan: image ini TIDAK diuji build secara lokal (sandbox tanpa daemon
+# Docker); build pertama yang terverifikasi berjalan di CI GitHub Actions.
+FROM node:24-bookworm-slim AS build
+WORKDIR /app
+COPY mcp-sidecar/package.json mcp-sidecar/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY mcp-sidecar/tsconfig.json ./tsconfig.json
+COPY mcp-sidecar/src ./src
+RUN npm run build \
+  && npm prune --omit=dev
+
+FROM node:24-bookworm-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/node_modules ./node_modules
+COPY mcp-sidecar/package.json ./
+COPY mcp-sidecar/LICENSE ./
+ENTRYPOINT ["node", "dist/cli.js"]
+CMD ["--help"]
