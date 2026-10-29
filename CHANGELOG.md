@@ -5,6 +5,14 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-29
+
+Rilis ulang dengan isi sama seperti 0.1.3. Publish `lp-trace-mcp`
+0.1.3 gagal pada langkah provenance (`TLOG_CREATE_ENTRY_ERROR`:
+entri duplikat di transparency log Sigstore); `lp-tracer` 0.1.3
+sendiri terbit normal. Token tidak berizin me-re-run job yang gagal
+(403), sehingga rilis diterbitkan ulang sebagai 0.1.4.
+
 ## [0.1.3] - 2026-10-29
 
 ### Ditambahkan
