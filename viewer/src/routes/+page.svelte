@@ -3,12 +3,17 @@
 		agentEntries,
 		categoryOf,
 		consoleEntries,
+		durationMs as calcDurationMs,
+		endpointKey,
+		endpointsOf,
 		filterConsole,
 		filterRows,
 		formatSeconds,
 		groupWaterfall,
+		hasResumedMarker,
 		parseTrace,
 		relativeSeconds,
+		shortEndpointLabel,
 		summarize,
 		toCSV,
 		toHAR,
@@ -50,11 +55,24 @@
 
 	const rows = $derived(parsed?.rows ?? []);
 	const skipped = $derived(parsed?.skipped ?? 0);
-	const durationMs = $derived(
-		rows.length > 1 ? rows[rows.length - 1].mono_ms - rows[0].mono_ms : 0
+	const durationMs = $derived(calcDurationMs(rows));
+	const endpointList = $derived(endpointsOf(rows));
+	const duplicatedEndpointUrls = $derived(
+		new Set(
+			endpointList
+				.filter((e, _, arr) => arr.filter((x) => x.endpoint === e.endpoint).length > 1)
+				.map((e) => e.endpoint)
+		)
 	);
+	const resumed = $derived(hasResumedMarker(rows));
+	let selectedEndpoints = $state(new Set<string>());
 	const filteredRows = $derived(
-		filterRows(rows, query, selectedCategories.size ? [...selectedCategories] : [])
+		filterRows(
+			rows,
+			query,
+			selectedCategories.size ? [...selectedCategories] : [],
+			selectedEndpoints.size ? [...selectedEndpoints] : []
+		)
 	);
 	const waterfall = $derived(groupWaterfall(filteredRows));
 	const consoleList = $derived(
@@ -86,6 +104,7 @@
 		parsed = result;
 		fileName = name;
 		loadError = '';
+		selectedEndpoints.clear();
 	}
 
 	async function onFilePicked(event: Event) {
@@ -143,9 +162,15 @@
 		);
 	}
 
-	function positionPct(rowMono: number): number {
+	function toggleEndpoint(key: string) {
+		if (selectedEndpoints.has(key)) selectedEndpoints.delete(key);
+		else selectedEndpoints.add(key);
+	}
+
+	function positionPct(row: Parameters<typeof relativeSeconds>[1]): number {
 		if (durationMs <= 0 || rows.length === 0) return 0;
-		return Math.max(0, Math.min(100, ((rowMono - rows[0].mono_ms) / durationMs) * 100));
+		const rel = relativeSeconds(rows, row);
+		return Math.max(0, Math.min(100, (rel / (durationMs / 1000)) * 100));
 	}
 </script>
 
@@ -179,6 +204,12 @@
 			<div><span>Baris dilewati</span><strong>{skipped}</strong></div>
 			<div><span>Rentang</span><strong>{formatSeconds(durationMs / 1000)}</strong></div>
 			<div><span>Ditampilkan</span><strong>{filteredRows.length} baris</strong></div>
+			{#if endpointList.length > 0}
+				<div><span>Endpoint</span><strong>{endpointList.map((e) => e.label).join(', ')}</strong></div>
+			{/if}
+			{#if resumed}
+				<div><span>Sesi dilanjutkan</span><strong>ya (resume --append)</strong></div>
+			{/if}
 		</section>
 
 		<section class="controls" aria-label="Filter dan pencarian">
@@ -202,6 +233,22 @@
 					</button>
 				{/each}
 			</div>
+			{#if endpointList.length > 0}
+				<div class="chips">
+					<button type="button" class:active={selectedEndpoints.size === 0} onclick={() => selectedEndpoints.clear()}>
+						Semua endpoint
+					</button>
+					{#each endpointList as ep (endpointKey(ep.endpoint, ep.endpoint_index))}
+						<button
+							type="button"
+							class:active={selectedEndpoints.has(endpointKey(ep.endpoint, ep.endpoint_index))}
+							onclick={() => toggleEndpoint(endpointKey(ep.endpoint, ep.endpoint_index))}
+						>
+							{ep.label}
+						</button>
+					{/each}
+				</div>
+			{/if}
 			<div class="exports">
 				<button type="button" onclick={exportCSV}>Ekspor CSV (tampilan saat ini)</button>
 				<button type="button" onclick={exportHAR}
@@ -230,12 +277,15 @@
 							<span class="track"
 								><span
 									class="dot"
-									style="left: {positionPct(row.mono_ms)}%; background: {CATEGORY_COLOR[categoryOf(row.type)]}"
+									style="left: {positionPct(row)}%; background: {CATEGORY_COLOR[categoryOf(row.type)]}"
 								></span></span
 							>
 							<code class="type" style="color: {CATEGORY_COLOR[categoryOf(row.type)]}"
 								>{row.type}</code
 							>
+							{#if row.endpoint}
+								<span class="badge">{shortEndpointLabel(row.endpoint)}{duplicatedEndpointUrls.has(row.endpoint) ? ` #${row.endpoint_index}` : ''}</span>
+							{/if}
 							<span class="summary">{summarize(row)}</span>
 						</li>
 					{/each}
