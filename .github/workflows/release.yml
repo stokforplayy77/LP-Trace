@@ -69,6 +69,11 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
+      # Trusted publishing (OIDC) butuh npm >= 11.5.1; paksa npm terbaru
+      # agar tidak tergantung versi bawaan Node di runner.
+      - name: Perbarui npm
+        run: npm install -g npm@latest
+
       - name: Publish
         working-directory: ${{ matrix.package }}
         run: |
