@@ -7,11 +7,13 @@
 
 import { runTracer } from "./tracer.js";
 import { runReplay } from "./replay.js";
+import { formatTracerError } from "./errors.js";
 
 const VERSION = "0.1.0";
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
 const MIN_MAX_BYTES = 4096;
 const DEFAULT_WAIT_MS = 1500;
+const DEFAULT_RETRY_DELAY_MS = 500;
 
 const HELP = `lp-tracer ${VERSION} — tracer CDP eksternal untuk Lightpanda Browser (M1)
 
@@ -56,6 +58,12 @@ OPSI
                        --navigate dan --agent-trace) dan bandingkan
                        bentuk jaringannya. Laporan JSON ke stdout.
   --replay-report <f>  Tulis laporan JSON replay ke file ini juga.
+  --retry <n>          Ulangi startup (koneksi + handshake) bila endpoint
+                       tidak terjangkau, hingga n kali (default 0 = tanpa
+                       retry). Hanya kegagalan koneksi yang di-retry;
+                       penolakan handshake langsung fatal.
+  --retry-delay-ms <n> Jeda dasar antar percobaan ulang, ms (default 500;
+                       backoff eksponensial, maks 8000 ms).
   --help               Tampilkan bantuan ini.
   --version            Tampilkan versi.
 
@@ -95,6 +103,8 @@ interface ParsedArgs {
   livePort: number | null;
   replay: string | null;
   replayReport: string | null;
+  retries: number;
+  retryDelayMs: number;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -112,6 +122,8 @@ function parseArgs(argv: string[]): ParsedArgs {
     livePort: null,
     replay: null,
     replayReport: null,
+    retries: 0,
+    retryDelayMs: DEFAULT_RETRY_DELAY_MS,
   };
   const takeValue = (flag: string, i: number): string => {
     const v = argv[i + 1];
@@ -188,6 +200,24 @@ function parseArgs(argv: string[]): ParsedArgs {
       case "--replay-report":
         args.replayReport = takeValue(a, i++);
         break;
+      case "--retry": {
+        const raw = takeValue(a, i++);
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < 0) {
+          fail(`--retry harus bilangan bulat >= 0, diterima: ${raw}.`);
+        }
+        args.retries = n;
+        break;
+      }
+      case "--retry-delay-ms": {
+        const raw = takeValue(a, i++);
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < 0) {
+          fail(`--retry-delay-ms harus bilangan bulat >= 0, diterima: ${raw}.`);
+        }
+        args.retryDelayMs = n;
+        break;
+      }
       default:
         fail(`argumen tidak dikenal: ${a}.`);
     }
@@ -238,6 +268,8 @@ async function main(): Promise<void> {
         waitMs: args.waitMs,
         append: args.append,
         livePort: args.livePort,
+        retries: args.retries,
+        retryDelayMs: args.retryDelayMs,
         reportPath: args.replayReport,
       });
       if (replayed.report !== null) {
@@ -257,7 +289,7 @@ async function main(): Promise<void> {
       }
       process.exit(replayed.exitCode);
     } catch (e) {
-      console.error(`lp-tracer: ${e instanceof Error ? e.message : String(e)}`);
+      console.error(`lp-tracer: ${formatTracerError(e)}`);
       process.exitCode = 1;
       return;
     }
@@ -276,10 +308,12 @@ async function main(): Promise<void> {
       agentTrace: args.agentTrace,
       append: args.append,
       livePort: args.livePort,
+      retries: args.retries,
+      retryDelayMs: args.retryDelayMs,
     });
   } catch (e) {
     // Kegagalan sebelum sesi dimulai (mis. validasi resume): pesan rapi, keluar 1.
-    console.error(`lp-tracer: ${e instanceof Error ? e.message : String(e)}`);
+    console.error(`lp-tracer: ${formatTracerError(e)}`);
     process.exitCode = 1;
     return;
   }
