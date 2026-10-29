@@ -5,6 +5,18 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
 
 ## [Unreleased]
 
+### Fixed
+
+- Perbaikan harness uji ketahanan (hanya pengujian, kode produk tidak
+  berubah): `run-robust-tests.mjs` kini menjalankan build `tsc` dulu
+  seperti rangkaian uji lainnya. Sebelumnya rangkaian ini mengasumsikan
+  `dist/` sudah ada — di checkout bersih CI tidak ada, sehingga proses
+  tracer mati seketika dan penantian keluarnya menggantung 30 detik
+  (badge CI "failing" pada 29 Okt 2026). `waitForExit` kini juga
+  langsung kembali bila proses anak sudah keluar sebelum listener
+  dipasang, dan jumlah baris trace diperiksa eksplisit sebelum
+  Playwright/sesi panjang dimulai.
+
 ## [0.1.4] - 2026-10-29
 
 Rilis ulang dengan isi sama seperti 0.1.3. Publish `lp-trace-mcp`
