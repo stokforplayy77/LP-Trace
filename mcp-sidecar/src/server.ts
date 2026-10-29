@@ -24,6 +24,7 @@ const CATEGORY_DESCRIPTIONS: Record<SummaryCategory, string> = {
   console: "Runtime.consoleAPICalled (konsol)",
   error: "Runtime.exceptionThrown + Network.loadingFailed (error)",
   tracer: "baris internal tracer.* (sesi/anotasi)",
+  agent: "baris agent.* dari file trace agent --trace upstream (F5)",
   other: "event lain di luar kategori di atas",
 };
 
@@ -54,7 +55,7 @@ export function createMcpServer(tracePath: string): McpServer {
         .optional()
         .describe(
           "Filter kategori event yang diringkas. Bila tidak diisi, seluruh file diringkas. " +
-            "Kategori yang didukung: navigation, network, console, error, tracer, other. " +
+            "Kategori yang didukung: navigation, network, console, error, tracer, agent, other. " +
             "Filter berdasarkan isi (teks/URL) tidak didukung.",
         ),
     },
