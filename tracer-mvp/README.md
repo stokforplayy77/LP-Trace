@@ -21,7 +21,8 @@ sidecar MCP (F4, M3) ada di repo ini (`../viewer/`, `../mcp-sidecar/`).
 | Field `timing` CDP | Bernilai -1 (M0/M0b); tidak disimpan, waterfall memakai stempel waktu tracer |
 | Ukuran byte / breakdown DNS/TLS | Tidak tersedia dari CDP; tidak diklaim |
 | Koeksistensi dengan Puppeteer | Terbukti di M0b; M1 tidak mengujinya ulang |
-| Playwright | Tidak diuji; tidak diklaim |
+| Playwright | Terverifikasi berdampingan (ROBUST, `connectOverCDP`, playwright-core 1.64.1); tracer tidak mengamati navigasi Playwright (satu target per koneksi) |
+| `<img>` | Lightpanda 1.0.2 tidak me-fetch `<img>` (0 hit server lokal; temuan ROBUST, bukan bug tracer) |
 | Overhead < 5% | Terverifikasi lewat benchmark Bab 3.7 (lihat di bawah) |
 
 ## Syarat
