@@ -13,6 +13,7 @@ import {
   chmod,
   readFile,
   stat,
+  utimes,
   writeFile,
   mkdtemp,
 } from "node:fs/promises";
@@ -674,6 +675,90 @@ async function main() {
           r.data.page.url.includes("/ok.html"),
       ),
     );
+
+    // ---- Uji 9: penjangkaran mtime — file agen lama, tracer mulai belakangan ----
+    console.log("== uji 9: penjangkaran mtime agen (live, post-hoc) ==");
+    const agentOldFile = join(workDir, "anchor-agent-trace.jsonl");
+    const anchorLines = [
+      '{"type":"run","t":0,"provider":"none","model":""}',
+      '{"type":"tool","t":0,"step":1,"name":"goto","ms":4,"result_bytes":6,"error":false,"navigated":true,"page":{"url":"http://127.0.0.1:8771/ok.html","httpStatus":200,"title":"OK"}}',
+      '{"type":"tool","t":2000,"step":2,"name":"extract","ms":0,"result_bytes":38,"error":false,"navigated":false,"page":{"url":"http://127.0.0.1:8771/ok.html","httpStatus":200,"title":"OK"}}',
+      '{"type":"tool","t":5000,"step":3,"name":"evaluate","ms":1,"result_bytes":5,"error":false,"navigated":false,"page":{"url":"http://127.0.0.1:8771/ok.html","httpStatus":200,"title":"OK"}}',
+      '{"type":"end","t":5100,"model_calls":0,"tool_calls":3,"tokens":{"input":0,"cached":0,"cache_creation":0,"output":0}}',
+      "",
+    ].join("\n");
+    await writeFile(agentOldFile, anchorLines);
+    const backdated9 = new Date(Date.now() - 60_000);
+    await utimes(agentOldFile, backdated9, backdated9);
+    const mtime9 = (await stat(agentOldFile)).mtimeMs;
+    const trace9 = join(workDir, "trace9.jsonl");
+    const child9 = spawn(process.execPath, [
+      ...cli.slice(1),
+      "--cdp",
+      CDP,
+      "--output",
+      trace9,
+      "--session",
+      "m1-test-9",
+      "--stay",
+      "--agent-trace",
+      agentOldFile,
+    ]);
+    let child9Stderr = "";
+    child9.stderr.on("data", (d) => {
+      child9Stderr += d;
+    });
+    const exit9 = new Promise((resolve) => child9.on("exit", (code) => resolve(code)));
+    try {
+      let agentSeen9 = false;
+      for (let i = 0; i < 40; i++) {
+        try {
+          const t = await readFile(trace9, "utf8");
+          if (t.includes("agent.end")) {
+            agentSeen9 = true;
+            break;
+          }
+        } catch {
+          /* belum ada file */
+        }
+        await sleep(250);
+      }
+      check("uji 9 baris agent.end tertail dari file lama", agentSeen9);
+    } finally {
+      child9.kill("SIGINT");
+      const code9 = await Promise.race([
+        exit9,
+        sleep(10000).then(() => {
+          try {
+            child9.kill("SIGKILL");
+          } catch {}
+          return "timeout";
+        }),
+      ]);
+      check("uji 9 tracer keluar 0 setelah SIGINT", code9 === 0, `code=${String(code9)} stderr=${child9Stderr.slice(0, 200)}`);
+    }
+    const rows9 = await readRows(trace9);
+    const started9 = rows9.find((r) => r.type === "tracer.session_started");
+    const agent9 = rows9.filter((r) => r.type.startsWith("agent."));
+    check("uji 9 5 baris agent.* dari file lama", agent9.length === 5, `ditemukan ${agent9.length}`);
+    check(
+      "uji 9 ts baris agen ≈ mtime + t - t_terakhir (baris terakhir batch pada mtime)",
+      agent9.every((r) => {
+        const t = r.data?.agent_t ?? (r.type === "agent.run" ? 0 : r.type === "agent.end" ? 5100 : null);
+        return t !== null && Math.abs(Date.parse(r.ts) - (mtime9 + t - 5100)) <= 5000;
+      }),
+      agent9.map((r) => `${r.type} ts=${r.ts} agent_t=${r.data?.agent_t}`).join(" | "),
+    );
+    check(
+      "uji 9 urutan ts baris agen sejalan urutan t",
+      agent9.every((r, i) => i === 0 || Date.parse(r.ts) >= Date.parse(agent9[i - 1].ts)),
+    );
+    check(
+      "uji 9 baris agen mendahului session_started (post-hoc)",
+      started9 !== undefined && agent9.length > 0 && Date.parse(agent9[0].ts) < Date.parse(started9.ts),
+    );
+    check("uji 9 mono_ms baris agen tidak negatif", agent9.every((r) => r.mono_ms >= 0));
+    check("uji 9 seq berurutan", rows9.every((r, i) => r.seq === i + 1));
   } finally {
     kill(serve);
     httpServer.close();
