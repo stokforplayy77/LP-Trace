@@ -11,6 +11,10 @@ export interface TraceRow {
 	lightpanda_version: string;
 	type: string;
 	data: Record<string, unknown>;
+	/** URL CDP koneksi asal baris; "" untuk baris bukan-CDP (tracer.*, agent.*) atau trace lama. */
+	endpoint: string;
+	/** Nomor urut koneksi; -1 untuk baris bukan-CDP atau trace lama. */
+	endpoint_index: number;
 }
 
 export interface ParsedTrace {
@@ -52,7 +56,9 @@ export function parseTraceLine(line: string): TraceRow | null {
 		lightpanda_version:
 			typeof rec.lightpanda_version === 'string' ? rec.lightpanda_version : 'unknown',
 		type: rec.type,
-		data: rec.data as Record<string, unknown>
+		data: rec.data as Record<string, unknown>,
+		endpoint: typeof rec.endpoint === 'string' ? rec.endpoint : '',
+		endpoint_index: typeof rec.endpoint_index === 'number' ? rec.endpoint_index : -1
 	};
 }
 
@@ -110,7 +116,57 @@ function urlOf(data: Record<string, unknown>): string {
 	return pickString(data, 'url') || pickString(data, 'documentURL');
 }
 
-/** Ringkasan satu baris untuk timeline/tabel. */
+export interface EndpointInfo {
+	endpoint: string;
+	endpoint_index: number;
+	/** Label tampil: URL, ditambah #indeks bila URL yang sama dipakai beberapa koneksi. */
+	label: string;
+}
+
+/** Kunci unik pasangan (endpoint, indeks) untuk Set filter. */
+export function endpointKey(endpoint: string, endpoint_index: number): string {
+	return `${endpoint_index}\n${endpoint}`;
+}
+
+/** Label pendek untuk lencana: host:port dari URL, atau "tracer" untuk baris bukan-CDP. */
+export function shortEndpointLabel(endpoint: string): string {
+	if (!endpoint) return 'tracer';
+	try {
+		return new URL(endpoint).host || endpoint;
+	} catch {
+		return endpoint;
+	}
+}
+
+/** Daftar endpoint CDP yang muncul di trace, terurut indeks. */
+export function endpointsOf(rows: TraceRow[]): EndpointInfo[] {
+	const pairs = new Map<string, { endpoint: string; endpoint_index: number }>();
+	for (const row of rows) {
+		if (!row.endpoint) continue;
+		const key = endpointKey(row.endpoint, row.endpoint_index);
+		if (!pairs.has(key)) {
+			pairs.set(key, { endpoint: row.endpoint, endpoint_index: row.endpoint_index });
+		}
+	}
+	const indexCount = new Map<string, number>();
+	for (const p of pairs.values()) {
+		indexCount.set(p.endpoint, (indexCount.get(p.endpoint) ?? 0) + 1);
+	}
+	return [...pairs.values()]
+		.map((p) => ({
+			...p,
+			label:
+				(indexCount.get(p.endpoint) ?? 0) > 1
+					? `${p.endpoint} #${p.endpoint_index}`
+					: p.endpoint
+		}))
+		.sort((a, b) => a.endpoint_index - b.endpoint_index);
+}
+
+/** true bila trace memuat baris session_resumed (sesi dilanjutkan dengan --append). */
+export function hasResumedMarker(rows: TraceRow[]): boolean {
+	return rows.some((row) => row.type === 'tracer.session_resumed');
+}
 export function summarize(row: TraceRow): string {
 	const d = row.data;
 	switch (row.type) {
@@ -207,10 +263,12 @@ export interface WaterfallEntry {
 	endMs: number | null;
 	failed: boolean;
 	errorText: string;
-	/** Durasi total dari stempel waktu tracer (ms), atau null bila belum selesai. */
+	/** Durasi total dari stempel waktu tracer (ms), atau null bila belum selesai / melintasi batas resume. */
 	totalMs: number | null;
 	/** Waktu sampai respons pertama dari stempel waktu tracer (ms). */
 	timeToResponseMs: number | null;
+	endpoint: string;
+	endpoint_index: number;
 }
 
 function requestIdOf(data: Record<string, unknown>): string {
@@ -221,7 +279,7 @@ function requestIdOf(data: Record<string, unknown>): string {
 export function groupWaterfall(rows: TraceRow[]): WaterfallEntry[] {
 	const map = new Map<string, WaterfallEntry>();
 	const order: string[] = [];
-	const get = (id: string): WaterfallEntry => {
+	const get = (id: string, row: TraceRow): WaterfallEntry => {
 		let entry = map.get(id);
 		if (!entry) {
 			entry = {
@@ -237,10 +295,17 @@ export function groupWaterfall(rows: TraceRow[]): WaterfallEntry[] {
 				failed: false,
 				errorText: '',
 				totalMs: null,
-				timeToResponseMs: null
+				timeToResponseMs: null,
+				endpoint: row.endpoint,
+				endpoint_index: row.endpoint_index
 			};
 			map.set(id, entry);
 			order.push(id);
+		} else if (!entry.endpoint && row.endpoint) {
+			// Baris pendahulu (mis. responseReceived tanpa requestWillBeSent)
+			// tidak membawa endpoint; adopsi dari baris berikutnya yang punya.
+			entry.endpoint = row.endpoint;
+			entry.endpoint_index = row.endpoint_index;
 		}
 		return entry;
 	};
@@ -249,7 +314,7 @@ export function groupWaterfall(rows: TraceRow[]): WaterfallEntry[] {
 		if (row.type === 'Network.requestWillBeSent') {
 			const id = requestIdOf(d);
 			if (!id) continue;
-			const entry = get(id);
+			const entry = get(id, row);
 			entry.startMs = row.mono_ms;
 			entry.url = urlOf(d);
 			entry.method = pickString(d, 'method') || 'GET';
@@ -257,7 +322,7 @@ export function groupWaterfall(rows: TraceRow[]): WaterfallEntry[] {
 		} else if (row.type === 'Network.responseReceived') {
 			const id = requestIdOf(d);
 			if (!id) continue;
-			const entry = get(id);
+			const entry = get(id, row);
 			entry.responseMs = row.mono_ms;
 			entry.status = pickString(d, 'status');
 			entry.mimeType = pickString(d, 'mimeType');
@@ -265,11 +330,11 @@ export function groupWaterfall(rows: TraceRow[]): WaterfallEntry[] {
 		} else if (row.type === 'Network.loadingFinished') {
 			const id = requestIdOf(d);
 			if (!id) continue;
-			get(id).endMs = row.mono_ms;
+			get(id, row).endMs = row.mono_ms;
 		} else if (row.type === 'Network.loadingFailed') {
 			const id = requestIdOf(d);
 			if (!id) continue;
-			const entry = get(id);
+			const entry = get(id, row);
 			entry.endMs = row.mono_ms;
 			entry.failed = true;
 			entry.errorText = asString(d.errorText);
@@ -277,9 +342,14 @@ export function groupWaterfall(rows: TraceRow[]): WaterfallEntry[] {
 	}
 	return order.map((id) => {
 		const entry = map.get(id)!;
+		// Durasi dari mono_ms; entri yang melintasi batas resume (jam proses
+		// baru) menghasilkan selisih negatif dan dilaporkan null, bukan negatif.
 		entry.timeToResponseMs =
-			entry.responseMs !== null ? entry.responseMs - entry.startMs : null;
-		entry.totalMs = entry.endMs !== null ? entry.endMs - entry.startMs : null;
+			entry.responseMs !== null && entry.responseMs >= entry.startMs
+				? entry.responseMs - entry.startMs
+				: null;
+		entry.totalMs =
+			entry.endMs !== null && entry.endMs >= entry.startMs ? entry.endMs - entry.startMs : null;
 		return entry;
 	});
 }
@@ -329,10 +399,20 @@ export function searchableText(row: TraceRow): string {
 	return parts.join(' ').toLowerCase();
 }
 
-export function filterRows(rows: TraceRow[], query: string, categories: Category[]): TraceRow[] {
+export function filterRows(
+	rows: TraceRow[],
+	query: string,
+	categories: Category[],
+	endpointKeys: string[] = []
+): TraceRow[] {
 	const q = query.trim().toLowerCase();
+	const selected = new Set(endpointKeys);
 	return rows.filter((row) => {
 		if (categories.length > 0 && !categories.includes(categoryOf(row.type))) return false;
+		// Baris bukan-CDP (tracer/agen) tidak terikat endpoint dan selalu lolos filter endpoint.
+		if (selected.size > 0 && row.endpoint && !selected.has(endpointKey(row.endpoint, row.endpoint_index))) {
+			return false;
+		}
 		if (q && !searchableText(row).includes(q)) return false;
 		return true;
 	});
@@ -361,7 +441,17 @@ function csvCell(value: string): string {
 
 /** CSV dari baris yang sedang ditampilkan (hasil filter saat ini). */
 export function toCSV(rows: TraceRow[]): string {
-	const header = ['seq', 'ts', 'mono_ms', 'session', 'lightpanda_version', 'type', 'ringkasan'];
+	const header = [
+		'seq',
+		'ts',
+		'mono_ms',
+		'session',
+		'lightpanda_version',
+		'endpoint',
+		'endpoint_index',
+		'type',
+		'ringkasan'
+	];
 	const lines = [header.join(',')];
 	for (const row of rows) {
 		lines.push(
@@ -371,6 +461,8 @@ export function toCSV(rows: TraceRow[]): string {
 				String(row.mono_ms),
 				row.session,
 				row.lightpanda_version,
+				row.endpoint,
+				String(row.endpoint_index),
 				row.type,
 				summarize(row)
 			]
@@ -447,10 +539,27 @@ export function toHAR(rows: TraceRow[], entries: WaterfallEntry[]): Record<strin
 	};
 }
 
-/** Waktu relatif dalam detik terhadap baris pertama, 3 desimal. */
+/** Waktu relatif dalam detik terhadap baris pertama, 3 desimal.
+ * Dihitung dari `ts` absolut (benar lintas proses resume, karena mono_ms
+ * mulai dari 0 tiap proses tracer); fallback ke mono_ms bila ts tak ter-parse. */
 export function relativeSeconds(rows: TraceRow[], row: TraceRow): number {
 	if (rows.length === 0) return 0;
-	return (row.mono_ms - rows[0].mono_ms) / 1000;
+	const first = rows[0];
+	const t0 = Date.parse(first.ts);
+	const t1 = Date.parse(row.ts);
+	if (!Number.isNaN(t0) && !Number.isNaN(t1)) return (t1 - t0) / 1000;
+	return (row.mono_ms - first.mono_ms) / 1000;
+}
+
+/** Durasi total trace dalam ms, dari ts pertama–terakhir (fallback mono_ms). */
+export function durationMs(rows: TraceRow[]): number {
+	if (rows.length < 2) return 0;
+	const first = rows[0];
+	const last = rows[rows.length - 1];
+	const t0 = Date.parse(first.ts);
+	const t1 = Date.parse(last.ts);
+	if (!Number.isNaN(t0) && !Number.isNaN(t1)) return Math.max(0, t1 - t0);
+	return Math.max(0, last.mono_ms - first.mono_ms);
 }
 
 export function formatSeconds(value: number): string {
