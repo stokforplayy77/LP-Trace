@@ -141,6 +141,10 @@ Aturan default, tidak dapat dimatikan diam-diam:
   `password`, `auth`, termasuk bentuk `api_key`/`authToken`) → nilainya
   menjadi `REDACTED` (tanpa kurung siku, agar tidak menjadi
   `%5B...%5D` oleh pengodean URL). URL dicatat utuh kecuali parameter itu.
+- Argumen tool agen (`--agent-trace`): aturan yang sama berlaku
+  rekursif — nilai pada kunci mirip rahasia diganti `[REDACTED]` utuh
+  pada kedalaman berapa pun dan untuk tipe nilai apa pun; struktur
+  lebih dalam dari 32 tingkat disensor utuh.
 - Body permintaan (`postData`, `postDataEntries` base64) tidak direkam;
   diganti penanda `[BODY-OMITTED]`, kecuali `--include-bodies` aktif.
 - Argumen konsol: tiap argumen ≤ 500 karakter, total satu event ≤ 2000
