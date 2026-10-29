@@ -4,7 +4,7 @@
 // ditimpa atau dirotasi diam-diam. Cadangan 1024 byte disimpan agar baris
 // tracer.session_ended masih muat ditulis saat batas tercapai.
 
-import { open, type FileHandle } from "node:fs/promises";
+import { open, stat, type FileHandle } from "node:fs/promises";
 
 const FLUSH_INTERVAL_MS = 250;
 const FLUSH_THRESHOLD_BYTES = 64 * 1024;
@@ -33,17 +33,30 @@ export class BufferedWriter {
     private readonly path: string,
     private readonly maxBytes: number,
     private readonly onLimit: (err: SizeLimitReached) => void,
+    /**
+     * Bila true (mode --append / resume), file dibuka tanpa ditimpa dan
+     * akuntansi batas ukuran menghitung isi lama. Default: timpa.
+     */
+    private readonly append: boolean = false,
   ) {}
 
   async open(): Promise<void> {
     // 'w' + mode 0600: file baru berizin 0600; file lama ditimpa isinya
     // (trace baru per sesi) tetapi izin yang sudah ada dipertahankan oleh
     // sistem bila file sudah ada — untuk jaminan 0600, chmod eksplisit.
-    this.handle = await open(this.path, "w", 0o600);
+    // 'a': lanjutkan file yang ada (resume); file dibuat bila belum ada.
+    this.handle = await open(this.path, this.append ? "a" : "w", 0o600);
     try {
       await this.handle.chmod(0o600);
     } catch {
       // Sistem yang tidak mendukung chmod: abaikan, file tetap ditulis.
+    }
+    if (this.append) {
+      try {
+        this.bytesWritten = (await stat(this.path)).size;
+      } catch {
+        this.bytesWritten = 0;
+      }
     }
     this.timer = setInterval(() => {
       void this.flush();
