@@ -772,6 +772,41 @@ test("MS anotasi: baris anotasi membawa field endpoint kosong/-1", async (t) => 
   });
 });
 
+test("ANCHOR durasi: rentang min/maks ts, baris agen berjangkar mendahului sesi", async (t) => {
+  const dir = await tmpDir(t);
+  const tracePath = path.join(dir, "anchor.jsonl");
+  const row = (seq, ts, mono_ms, type, data) =>
+    JSON.stringify({
+      ts,
+      mono_ms,
+      seq,
+      session: "anchor-sidecar",
+      lightpanda_version: "1.0.2",
+      endpoint: "",
+      endpoint_index: -1,
+      type,
+      data,
+    });
+  await fs.writeFile(
+    tracePath,
+    [
+      row(1, "2026-10-29T07:00:05.000Z", 0, "tracer.session_started", {}),
+      row(2, "2026-10-29T07:00:00.000Z", 0, "agent.tool", { agent_t: 0 }),
+      row(3, "2026-10-29T07:00:02.000Z", 0, "agent.tool", { agent_t: 2000 }),
+      row(4, "2026-10-29T07:00:06.000Z", 1000, "tracer.session_ended", {}),
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await withClient(tracePath, async (client) => {
+    const summary = await callToolJson(client, "get_trace_summary", {});
+    assert.equal(summary.durationMs, 6000);
+    assert.equal(summary.durationSource, "ts");
+    assert.equal(summary.startedAt, "2026-10-29T07:00:00.000Z");
+    assert.equal(summary.endedAt, "2026-10-29T07:00:06.000Z");
+  });
+});
+
 test("ROBUST sessionError: dari session_ended terakhir, null bila berakhir bersih", async (t) => {
   const dir = await tmpDir(t);
   const row = (seq, mono_ms, type, data) =>
