@@ -5,6 +5,15 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-29
+
+### Diperbaiki
+
+- `--version`, `--help`, dan versi server MCP kini membaca versi dari
+  `package.json` (sumber tunggal), bukan string hardcode. Paket 0.1.1
+  keliru melaporkan dirinya sebagai 0.1.0; ditambah uji versi yang
+  membandingkan keluaran CLI dan server MCP dengan `package.json`.
+
 ## [0.1.1] - 2026-10-29
 
 Rilis otomatis pertama lewat CI (trusted publishing OIDC + image Docker
