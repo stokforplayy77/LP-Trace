@@ -91,6 +91,8 @@ docker run --rm -v "$PWD/traces:/traces" lp-trace-tracer \
 | `--max-bytes <n>` | Batas ukuran file (default 50 MB, minimum 4096). Bila tercapai, penulisan berhenti; data lama tidak ditimpa; cadangan 1024 byte disimpan untuk `session_ended`. Dengan `--append`, batas berlaku untuk ukuran total file. |
 | `--navigate <url>` | Navigasikan koneksi ke URL (dapat diulang). Satu `--cdp`: navigasi berurutan pada target yang sama. Beberapa `--cdp`: dipasangkan berurutan (navigasi ke-i untuk koneksi ke-i). Tambahan di luar Bab 4.1, lihat "Perbedaan dari spesifikasi". |
 | `--agent-trace <file>` | Baca (tail) file trace `agent --trace` upstream selama sesi; langkah agen ditulis sebagai baris `agent.*` pada sumbu waktu yang sama (F5, lihat "Hubungan dengan `agent --trace` bawaan"). File boleh belum ada saat tracer mulai. |
+| `--live-port <n>` | Sajikan baris trace secara live lewat SSE di 127.0.0.1:<n> (`GET /events`, `GET /health`). Tanpa flag ini tidak ada server. Port yang sudah dipakai menggagalkan sesi sebelum file trace dibuka. |
+| `--replay <file>` | Mode replay: jalankan ulang navigasi tingkat atas dari file trace (tepat satu `--cdp`; menolak `--navigate`/`--agent-trace`), lalu bandingkan jumlah request + host per langkah. Laporan JSON ke stdout; `--replay-report <file>` menulis laporan yang sama ke file. |
 | `--wait-ms <n>` | Jeda antar navigasi (default 1500 ms). |
 | `--stay` | Tetap berjalan setelah navigasi selesai. |
 | `--help`, `--version` | Bantuan / versi. |
