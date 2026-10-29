@@ -71,6 +71,15 @@ ditulis ke stderr.
 `--help` dan `--version` tersedia. SIGINT/SIGTERM ditangani dengan keluar
 bersih.
 
+Sidecar juga tersedia sebagai image Docker `lp-trace-mcp` (lihat
+`docker/Dockerfile.mcp-sidecar` di akar repo; konteks build = akar
+repo). Jalankan dengan `-i` agar stdin MCP tetap terhubung:
+
+```bash
+docker build -f docker/Dockerfile.mcp-sidecar -t lp-trace-mcp .
+docker run --rm -i -v "$PWD:/traces" lp-trace-mcp --trace /traces/trace.jsonl
+```
+
 ## Contoh konfigurasi klien (stdio)
 
 ```json
