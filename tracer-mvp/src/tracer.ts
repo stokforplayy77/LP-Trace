@@ -14,6 +14,7 @@ import {
 } from "./cdp.js";
 import { AgentTraceTailer } from "./agent-trace.js";
 import { redactEvent } from "./redact.js";
+import { startLiveServer, type LiveServer } from "./live.js";
 import { BufferedWriter, SizeLimitReached } from "./writer.js";
 
 export interface TracerOptions {
@@ -31,6 +32,8 @@ export interface TracerOptions {
   agentTrace: string | null;
   /** Bila true, lanjutkan file trace yang ada tanpa menimpa (resume). */
   append: boolean;
+  /** Port server SSE live (loopback); null = mode live mati. */
+  livePort: number | null;
 }
 
 export interface TracerOutcome {
@@ -193,6 +196,18 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
   }
 
   let limitReached = false;
+  // Mode live dimulai SEBELUM file dibuka: port yang sudah dipakai
+  // menggagalkan sesi sebelum file trace disentuh.
+  let live: LiveServer | null = null;
+  let eventsWritten = 0;
+  if (opts.livePort !== null) {
+    live = await startLiveServer(
+      opts.livePort,
+      session,
+      opts.cdpUrls,
+      () => eventsWritten,
+    );
+  }
   const writer = new BufferedWriter(
     opts.output,
     opts.maxBytes,
@@ -202,10 +217,16 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
     },
     opts.append,
   );
-  await writer.open();
+  try {
+    await writer.open();
+  } catch (e) {
+    if (live !== null) {
+      await live.close();
+    }
+    throw e;
+  }
 
   const startMono = performance.now();
-  let eventsWritten = 0;
   let ended = false;
   let shutdownRequested = false;
   let exitCode = 0;
@@ -230,10 +251,13 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
       type,
       data,
     };
-    const ok = writer.write(JSON.stringify(row));
+    const line = JSON.stringify(row);
+    const ok = writer.write(line);
     if (ok) {
       seq = nextSeq;
       eventsWritten += 1;
+      // Mode live: siarkan baris yang sama persis setelah berhasil ditulis.
+      live?.broadcast(line);
     }
     return ok;
   };
@@ -257,10 +281,12 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
       type: "tracer.session_ended",
       data: { reason, ...extra },
     };
-    const ok = writer.writeSessionEnd(JSON.stringify(row));
+    const line = JSON.stringify(row);
+    const ok = writer.writeSessionEnd(line);
     if (ok) {
       seq = nextSeq;
       eventsWritten += 1;
+      live?.broadcast(line);
     }
     return ok;
   };
@@ -328,6 +354,9 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
     }
     writeSessionEnd(reason, endExtra);
     await writer.close();
+    if (live !== null) {
+      await live.close();
+    }
   };
 
   // Penutupan anggun: SIGINT/SIGTERM -> flush, session_ended, keluar 0.
