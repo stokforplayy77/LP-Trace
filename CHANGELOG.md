@@ -5,6 +5,11 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-29
+
+Rilis otomatis pertama lewat CI (trusted publishing OIDC + image Docker
+ke GHCR). Isi sama dengan 0.1.0; versi 0.1.0 hanya terbit manual di npm.
+
 ## [0.1.0] - 2026-10-29
 
 Rilis publik pertama.
