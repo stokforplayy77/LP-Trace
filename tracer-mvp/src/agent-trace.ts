@@ -27,6 +27,11 @@ const MAX_READ_BYTES_PER_POLL = 4 * 1024 * 1024;
 const AGENT_TITLE_MAX = 200;
 const AGENT_ARG_MAX = 500;
 const AGENT_RESULT_MAX = 2000;
+// Kedalaman maksimum struktur argumen yang ditelusuri. Di luar batas
+// ini nilainya dianggap tidak terverifikasi dan disensor, agar file
+// trace yang dibuat-buat dengan sarang ribuan tingkat tidak membuat
+// penelusuran rekursif kehabisan stack.
+const AGENT_MAX_DEPTH = 32;
 
 export interface AgentTraceRow {
   type: string;
@@ -62,26 +67,43 @@ function truncateDeep(value: unknown, maxLen: number): unknown {
 }
 
 /**
+ * Telusuri nilai argumen secara rekursif (objek + array): nilai pada
+ * kunci mirip rahasia diganti [REDACTED] utuh pada KEDALAMAN BERAPA
+ * PUN dan untuk TIPE NILAI APA PUN. Sebelum perbaikan ini, aturan
+ * tersebut hanya berlaku untuk kunci tingkat atas yang bernilai
+ * string, sehingga rahasia bersarang (mis. args.config.api_key atau
+ * args.headers[0].value di bawah kunci mirip rahasia) lolos apa adanya
+ * ke file trace. Mengembalikan salinan baru; masukan tidak diubah.
+ */
+function redactSecretKeysDeep(value: unknown, depth: number): unknown {
+  if (depth > AGENT_MAX_DEPTH) return REDACTED;
+  if (Array.isArray(value)) {
+    return value.map((v) => redactSecretKeysDeep(v, depth + 1));
+  }
+  if (!isPlainObject(value)) return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, v] of Object.entries(value)) {
+    out[key] = isTokenLikeParam(key)
+      ? REDACTED
+      : redactSecretKeysDeep(v, depth + 1);
+  }
+  return out;
+}
+
+/**
  * Redaksi argumen tool agen: kunci dipertahankan, nilai string disensor
  * URL-nya dan dipotong 500 karakter; nilai pada kunci mirip rahasia
- * diganti [REDACTED] utuh.
+ * diganti [REDACTED] utuh pada kedalaman berapa pun (lihat
+ * redactSecretKeysDeep). Aturan header/URL/postData generik dari
+ * redactValue tetap berlaku untuk struktur bersarang yang bukan kunci
+ * mirip rahasia (mis. headers.authorization).
  */
 export function redactAgentArgs(
   args: Record<string, unknown>,
 ): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(args)) {
-    if (isTokenLikeParam(key) && typeof value === "string") {
-      out[key] = REDACTED;
-      continue;
-    }
-    if (typeof value === "string") {
-      out[key] = truncateString(redactUrlsInText(value), AGENT_ARG_MAX);
-      continue;
-    }
-    out[key] = truncateDeep(redactValue(value, { includeBodies: false }), AGENT_ARG_MAX);
-  }
-  return out;
+  const scrubbed = redactSecretKeysDeep(args, 0);
+  const redacted = redactValue(scrubbed, { includeBodies: false });
+  return truncateDeep(redacted, AGENT_ARG_MAX) as Record<string, unknown>;
 }
 
 function convertPage(raw: unknown): Record<string, unknown> {
