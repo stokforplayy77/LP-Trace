@@ -7,11 +7,19 @@
 // README menyatakan larangan mengisi anotasi dengan rahasia.
 //
 // Penulisan bersifat append-only: isi file yang sudah ada tidak pernah
-// diubah atau ditulis ulang. Penulisan antar pemanggilan tool diserialkan
-// dengan rantai promise sederhana agar dua anotasi tidak berebut nomor
-// seq yang sama.
+// diubah atau ditulis ulang. Dua lapis serialisasi menjaga nomor seq:
+// rantai promise dalam proses (panggilan berbarengan di satu sidecar)
+// dan lockfile antar-proses (dua sidecar yang menganotasi file yang
+// sama). Residu yang didokumentasikan: tracer yang sedang merekam
+// dapat men-flush baris dengan seq yang ditetapkan sebelum anotasi
+// membaca file, sehingga seq duplikat dengan baris tracer masih
+// mungkin dalam jendela satu interval flush — penampil menoleransinya
+// (kunci daftar memakai seq + indeks) dan ringkasan tidak bergantung
+// pada keunikan seq. Lihat docs/LOCK-DESIGN.md.
 
 import { appendFile, readFile } from "node:fs/promises";
+
+import { acquireLock, lockPathFor } from "./lockfile.js";
 
 export interface AnnotationResult {
   seq: number;
@@ -88,6 +96,22 @@ function scanExisting(text: string, exists: boolean): LastRowInfo {
 }
 
 async function appendAnnotationInner(
+  tracePath: string,
+  text: string,
+  expectedSession: string | undefined,
+): Promise<AnnotationResult> {
+  // Kunci dipegang selama seluruh baca -> hitung seq -> tambah, agar
+  // dua proses yang menganotasi file yang sama tidak membaca ekor
+  // yang sama dan menulis seq yang sama.
+  const lock = await acquireLock(lockPathFor(tracePath));
+  try {
+    return await appendAnnotationLocked(tracePath, text, expectedSession);
+  } finally {
+    await lock.release();
+  }
+}
+
+async function appendAnnotationLocked(
   tracePath: string,
   text: string,
   expectedSession: string | undefined,
