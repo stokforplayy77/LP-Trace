@@ -1,0 +1,31 @@
+{
+  "bin": {
+    "lp-tracer": "./dist/cli.js"
+  },
+  "description": "Tracer CDP eksternal untuk Lightpanda Browser: mencatat event CDP ke JSONL teredaksi (M1, sesuai Dokumen Perancangan v1.1)",
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "lightpanda",
+    "cdp",
+    "tracer",
+    "observability"
+  ],
+  "license": "Apache-2.0",
+  "main": "./dist/cli.js",
+  "name": "lp-tracer",
+  "private": true,
+  "scripts": {
+    "bench": "node tests/benchmark.mjs",
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "test": "node tests/run-m1-tests.mjs"
+  },
+  "type": "module",
+  "version": "0.1.0"
+}

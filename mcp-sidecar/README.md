@@ -1,0 +1,125 @@
+# lp-trace-mcp — Sidecar MCP untuk Trace Lightpanda (M3)
+
+Sidecar MCP yang mengekspos **tepat dua tool** untuk file trace JSONL yang
+ditulis tracer M1 (`lp-tracer`) dan dibaca penampil M2, sesuai Dokumen
+Perancangan v1.1 (Bab 4.1 F4). Sidecar membaca file JSONL yang sama —
+tidak ada format kedua, tidak ada akses ke browser, tidak ada pemanggilan
+CDP, tidak ada akses jaringan.
+
+## Tool
+
+### `get_trace_summary`
+
+Mengembalikan **ringkasan agregat saja**: jumlah halaman, jumlah
+permintaan, jumlah error, total durasi, hitungan per kategori event,
+hitungan per level konsol, nama host, dan path tanpa query.
+
+Argumen:
+
+| Argumen | Wajib | Keterangan |
+|---|---|---|
+| `category` | Tidak | Filter kategori: `navigation`, `network`, `console`, `error`, `tracer`, `other`. Bila tidak diisi, seluruh file diringkas. Filter berdasarkan isi (teks/URL) tidak didukung dan ditolak. |
+
+Kategori `error` mencakup `Runtime.exceptionThrown` dan
+`Network.loadingFailed` (yang terakhir ini dihitung di kategori error,
+bukan `network`). Level konsol dihitung sebagaimana diterima CDP, dengan
+`"warn"` dinormalisasi menjadi `"warning"`.
+
+Bila file trace belum ada atau kosong, tool mengembalikan ringkasan
+kosong dengan penjelasan, **bukan** error.
+
+Yang **tidak pernah** dikembalikan: isi trace mentah, teks konsol, URL
+lengkap beserta parameter query, nilai header, dan body. Durasi dihitung
+dari `mono_ms`/`ts` tracer (Bab 3.2 Keputusan 4); tidak ada klaim
+breakdown DNS/TLS atau ukuran byte.
+
+### `annotate_trace`
+
+Menambahkan **satu baris** ke file JSONL dengan `type:
+"tracer.annotation"` dan field skema lengkap (`ts`, `mono_ms`, `seq`
+berkelanjutan dari baris terakhir + 1, `session`,
+`lightpanda_version`, `data` berisi teks anotasi). Penulisan bersifat
+append-only: isi file yang sudah ada tidak pernah diubah. Mengembalikan
+konfirmasi berisi `seq` baris yang ditulis.
+
+Argumen:
+
+| Argumen | Wajib | Keterangan |
+|---|---|---|
+| `text` | Ya | Teks anotasi, disimpan apa adanya. |
+| `session` | Tidak | Pengenal sesi yang diharapkan. Bila diisi dan berbeda dengan sesi pada file trace, anotasi ditolak agar tidak menandai file yang salah. |
+
+> **Perhatian (Bab 3.6 butir 5):** teks anotasi disimpan apa adanya,
+> tanpa sensor dan tanpa pemotongan. Jangan isi anotasi dengan rahasia
+> (token, kata sandi, kunci API, isi header). Sidecar tidak berjanji
+> anotasi bebas rahasia — tanggung jawab isi ada pada pemanggil.
+
+## Menjalankan
+
+```bash
+npm install
+npm run build
+node dist/cli.js --trace /path/ke/trace.jsonl
+```
+
+Path file trace dapat juga diisi lewat variabel lingkungan `LP_TRACE_PATH`
+bila flag `--trace` tidak diberikan. Bila keduanya tidak ada, server
+keluar dengan pesan bantuan (ke stderr, agar stdout tetap bersih untuk
+protokol MCP). Transport yang dipakai adalah **stdio**; semua log
+ditulis ke stderr.
+
+`--help` dan `--version` tersedia. SIGINT/SIGTERM ditangani dengan keluar
+bersih.
+
+## Contoh konfigurasi klien (stdio)
+
+```json
+{
+  "mcpServers": {
+    "lp-trace": {
+      "command": "node",
+      "args": ["<path-ke-mcp-sidecar>/dist/cli.js", "--trace", "<path-ke-trace>/trace.jsonl"]
+    }
+  }
+}
+```
+
+Konfigurasi di atas adalah contoh bentuk umum untuk klien MCP berbasis
+stdio. Pengujian otomatis memakai klien SDK sungguhan lewat stdio (lihat
+`tests/mcp.test.mjs`); integrasi dengan aplikasi klien tertentu (mis.
+Claude Desktop) **tidak diuji** dan tidak diklaim.
+
+## Batas privasi yang jujur
+
+- Ringkasan hanya membaca file JSONL yang sudah diredaksi saat perekaman
+  (Bab 3.6). Bila file trace berisi rahasia mentah (mis. direkam tanpa
+  redaksi), ringkasan tetap tidak menampilkannya — tetapi file itu
+  sendiri tetap mengandung rahasia dan harus ditangani sebagai berkas
+  sensitif.
+- Host dan path ditampilkan tanpa query. Segmen path yang mengandung
+  rahasia secara harfiah tidak dapat dibedakan dari path biasa; jangan
+  merekam URL semacam itu.
+- Sidecar tidak pernah menulis apa pun ke file trace kecuali baris
+  anotasi lewat `annotate_trace`, dan tidak pernah membaca ulang data
+  dari browser.
+
+## Lisensi
+
+Apache-2.0 — lihat [LICENSE](../LICENSE) di akar repo (salinannya juga
+ada di folder ini). Lisensi ini untuk proses terpisah yang hanya
+berkomunikasi lewat CDP terbuka. Dokumen perancangan bukan nasihat
+hukum.
+
+## Perbedaan dari spesifikasi (tercatat)
+
+1. Path file trace hanya berasal dari flag CLI `--trace` atau variabel
+   lingkungan `LP_TRACE_PATH`, bukan dari argumen tool. Ini keputusan
+   keamanan yang disengaja: argumen tool tidak boleh mengarahkan sidecar
+   membaca/menulis file sembarang.
+2. `annotate_trace` pada file yang belum ada akan membuat file tersebut
+   (seq 1, sesi dari argumen atau `"unknown"`, versi `"unknown"`).
+3. `mono_ms` baris anotasi dihitung dari selisih waktu saat ini dengan
+   `ts` baris pertama (dibatasi bawah oleh `mono_ms` terakhir), agar
+   tetap monotonik terhadap sesi yang sama.
+4. Versi MCP SDK yang terpasang: 1.32.2 (rentang pada `package.json`:
+   `^1.24.0`).

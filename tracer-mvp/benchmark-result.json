@@ -1,0 +1,54 @@
+{
+  "generatedAt": "2026-10-29T06:45:27.501Z",
+  "lightpandaVersion": "1.0.2",
+  "nodeVersion": "v24.22.1",
+  "platform": "linux/x64",
+  "telemetry": "off (LIGHTPANDA_DISABLE_TELEMETRY=true di kedua sisi)",
+  "workload": {
+    "urls": [
+      "http://127.0.0.1:8773/ok.html",
+      "http://127.0.0.1:8773/throw.html",
+      "http://127.0.0.1:8773/multi.html",
+      "http://127.0.0.1:8773/ok.html"
+    ],
+    "waitMs": 1200,
+    "reps": 5
+  },
+  "noTracer": {
+    "timesMs": [
+      4946,
+      4924,
+      4951,
+      4971,
+      5179
+    ],
+    "medianMs": 4951
+  },
+  "tracer": {
+    "timesMs": [
+      5058,
+      5536,
+      5006,
+      4954,
+      4978
+    ],
+    "medianMs": 5006,
+    "cpuSecondsPerRep": [
+      0.17,
+      0.23,
+      0.17,
+      0.15,
+      0.15
+    ],
+    "traceBytesPerRep": [
+      28887,
+      28887,
+      28887,
+      28887,
+      28887
+    ]
+  },
+  "overheadPct": 1.11,
+  "gatePct": 5,
+  "verdict": "LULUS"
+}

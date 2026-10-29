@@ -1,0 +1,4 @@
+{"ts":"2026-10-29T05:44:05.153Z","mono_ms":0,"seq":1,"session":"my-agent-run-001","lightpanda_version":"1.0.2","type":"tracer.session_started","data":{"cdp":"ws://127.0.0.1:9222"}}
+{"ts":"2026-10-29T05:44:06.102Z","mono_ms":949,"seq":2,"session":"my-agent-run-001","lightpanda_version":"1.0.2","type":"Network.requestWillBeSent","data":{"requestId":"LID-0000000001","url":"https://example.com/","method":"GET","type":"Document"}}
+{"ts":"2026-10-29T05:44:06.610Z","mono_ms":1457,"seq":3,"session":"my-agent-run-001","lightpanda_version":"1.0.2","type":"Network.responseReceived","data":{"requestId":"LID-0000000001","url":"https://example.com/","status":200,"mimeType":"text/html"}}
+{"ts":"2026-10-29T05:44:07.004Z","mono_ms":1851,"seq":4,"session":"my-agent-run-001","lightpanda_version":"1.0.2","type":"Runtime.consoleAPICalled","data":{"type":"log","args":["LP-TRACER-PROBE-LOG"]}}

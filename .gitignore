@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+.svelte-kit/
+vendor/
+*.log
+*.tgz
+.env
+.DS_Store
+trace.jsonl

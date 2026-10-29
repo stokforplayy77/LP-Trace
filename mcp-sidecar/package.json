@@ -1,0 +1,27 @@
+{
+  "name": "lp-trace-mcp",
+  "version": "0.1.0",
+  "description": "Sidecar MCP untuk trace Lightpanda: get_trace_summary + annotate_trace (M3, sesuai Dokumen Perancangan v1.1)",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "lp-trace-mcp": "./dist/cli.js"
+  },
+  "main": "./dist/cli.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "test": "npm run build && node --test tests/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3"
+  }
+}
