@@ -1,5 +1,6 @@
 <script lang="ts">
 	import {
+		agentEntries,
 		categoryOf,
 		consoleEntries,
 		filterConsole,
@@ -21,7 +22,7 @@
 	let query = $state('');
 	let loadingSample = $state(false);
 
-	const ALL_CATEGORIES: Category[] = ['navigasi', 'network', 'konsol', 'error', 'tracer', 'lainnya'];
+	const ALL_CATEGORIES: Category[] = ['navigasi', 'network', 'konsol', 'error', 'tracer', 'agen', 'lainnya'];
 	let selectedCategories = $state(new Set<Category>());
 	let selectedLevels = $state(new Set<string>());
 
@@ -31,6 +32,7 @@
 		konsol: 'Konsol',
 		error: 'Error',
 		tracer: 'Tracer',
+		agen: 'Agen',
 		lainnya: 'Lainnya'
 	};
 
@@ -40,6 +42,7 @@
 		konsol: '#6b7280',
 		error: '#dc2626',
 		tracer: '#7c3aed',
+		agen: '#059669',
 		lainnya: '#9ca3af'
 	};
 
@@ -61,6 +64,7 @@
 			query
 		)
 	);
+	const agentList = $derived(agentEntries(filteredRows));
 	const counts = $derived(() => {
 		const map = new Map<Category, number>();
 		for (const row of rows) {
@@ -323,6 +327,40 @@
 							<span class="time">{formatSeconds(relativeSeconds(rows, entry.row))}</span>
 							<span class="badge level-{entry.level}">{entry.level}</span>
 							<span class="console-text">{entry.text || '(kosong)'}</span>
+						</li>
+					{/each}
+				</ol>
+			{/if}
+		</section>
+		<section aria-label="Panel agen">
+			<h2>Panel Agen</h2>
+			<p class="hint">
+				Langkah tool dari file trace <code>agent --trace</code> upstream (F5), pada sumbu
+				waktu yang sama dengan event CDP. Langkah agen yang direkam setelah trace selesai
+				mengelompok pada waktu ingest; jalankan tracer bersamaan dengan agen untuk
+				korelasi waktu yang akurat.
+			</p>
+			{#if agentList.length === 0}
+				<p class="empty">Tidak ada langkah agen dalam trace ini.</p>
+			{:else}
+				<ol class="console-list">
+					{#each agentList as entry (entry.row.seq)}
+						<li>
+							<span class="time">{formatSeconds(relativeSeconds(rows, entry.row))}</span>
+							<span class="badge">langkah {entry.step}</span>
+							<span class="console-text">
+								<strong>{entry.name}</strong>
+								{entry.ms} ms
+								{#if entry.error}
+									<span class="badge level-error">error</span>
+								{/if}
+								{#if entry.pageTitle}
+									— {entry.pageTitle}
+								{/if}
+								{#if entry.httpStatus !== null}
+									({entry.httpStatus})
+								{/if}
+							</span>
 						</li>
 					{/each}
 				</ol>
