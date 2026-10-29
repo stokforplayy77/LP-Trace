@@ -62,6 +62,11 @@ export function parseTraceLine(line: string): TraceRow | null {
 	};
 }
 
+/** Parse satu pesan SSE mode live (payload `data:`): baris trace atau null bila rusak. */
+export function parseLiveEvent(data: string): TraceRow | null {
+	return parseTraceLine(data);
+}
+
 /** Parse seluruh isi file .jsonl. Baris rusak dilewati dan dihitung, tidak crash. */
 export function parseTrace(text: string): ParsedTrace {
 	const rows: TraceRow[] = [];
