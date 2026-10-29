@@ -12,18 +12,23 @@ CDP, tidak ada akses jaringan.
 
 Mengembalikan **ringkasan agregat saja**: jumlah halaman, jumlah
 permintaan, jumlah error, total durasi, hitungan per kategori event,
-hitungan per level konsol, nama host, dan path tanpa query.
+hitungan per level konsol, nama host, dan path tanpa query, ditambah
+field `agent` (F5): `{ present, toolCalls, errors, tools, modelCalls,
+tokens, unknownLines }` — agregat langkah agen saja, tanpa argumen,
+hasil, atau URL lengkap.
 
 Argumen:
 
 | Argumen | Wajib | Keterangan |
 |---|---|---|
-| `category` | Tidak | Filter kategori: `navigation`, `network`, `console`, `error`, `tracer`, `other`. Bila tidak diisi, seluruh file diringkas. Filter berdasarkan isi (teks/URL) tidak didukung dan ditolak. |
+| `category` | Tidak | Filter kategori: `navigation`, `network`, `console`, `error`, `tracer`, `agent`, `other`. Bila tidak diisi, seluruh file diringkas. Filter berdasarkan isi (teks/URL) tidak didukung dan ditolak. |
 
 Kategori `error` mencakup `Runtime.exceptionThrown` dan
 `Network.loadingFailed` (yang terakhir ini dihitung di kategori error,
-bukan `network`). Level konsol dihitung sebagaimana diterima CDP, dengan
-`"warn"` dinormalisasi menjadi `"warning"`.
+bukan `network`). Kategori `agent` mencakup baris `agent.*` dari file
+trace `agent --trace` upstream yang dikorelasikan tracer (F5). Level
+konsol dihitung sebagaimana diterima CDP, dengan `"warn"` dinormalisasi
+menjadi `"warning"`.
 
 Bila file trace belum ada atau kosong, tool mengembalikan ringkasan
 kosong dengan penjelasan, **bukan** error.
