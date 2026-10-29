@@ -23,7 +23,7 @@
     "bench": "node tests/benchmark.mjs",
     "build": "tsc",
     "start": "node dist/cli.js",
-    "test": "node tests/run-m1-tests.mjs",
+    "test": "node tests/run-f5-tests.mjs && node tests/run-m1-tests.mjs",
     "prepublishOnly": "npm run build"
   },
   "type": "module",
