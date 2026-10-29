@@ -1,5 +1,7 @@
 # LP-Trace
 
+[![CI](https://github.com/stokforplayy77/LP-Trace/actions/workflows/ci.yml/badge.svg)](https://github.com/stokforplayy77/LP-Trace/actions/workflows/ci.yml)
+
 Lapisan observabilitas dan debugging untuk [Lightpanda Browser](https://github.com/lightpanda-io/browser):
 tracer CDP eksternal yang merekam event browser ke file JSONL yang sudah
 diredaksi, ditambah penampil trace statis dan sidecar MCP untuk
@@ -68,6 +70,61 @@ node dist/cli.js --trace /path/ke/trace.jsonl
 
 Detail tiap paket, termasuk flag, format JSONL, aturan redaksi, dan
 pemecahan masalah, ada di README masing-masing folder.
+
+## Continuous integration
+
+Workflow `.github/workflows/ci.yml` berjalan di tiap push ke `main` dan
+tiap pull request: uji tracer (dengan Lightpanda 1.0.2 asli), penampil
+(termasuk `svelte-check` dan build), dan sidecar MCP pada Node.js 22 dan
+24, dilanjutkan build ketiga image Docker tanpa push.
+
+## Docker
+
+Image di-build dari konteks akar repo. Build lokal:
+
+```bash
+docker build -f docker/Dockerfile.tracer -t lp-trace-tracer .
+docker build -f docker/Dockerfile.viewer -t lp-trace-viewer .
+docker build -f docker/Dockerfile.mcp-sidecar -t lp-trace-mcp .
+```
+
+Pakai:
+
+```bash
+# Tracer (Lightpanda + tracer dalam satu container)
+docker run --rm -v "$PWD/traces:/traces" lp-trace-tracer \
+  --output /traces/trace.jsonl --navigate https://example.com
+
+# Penampil
+docker run --rm -p 8080:80 lp-trace-viewer
+# lalu buka http://localhost:8080
+
+# Sidecar MCP (butuh -i untuk stdin)
+docker run --rm -i -v "$PWD:/traces" lp-trace-mcp --trace /traces/trace.jsonl
+```
+
+Pada tag `v*`, workflow rilis mem-push image ke GHCR sebagai
+`ghcr.io/stokforplayy77/lp-trace-tracer|viewer|mcp-sidecar:<versi>`.
+Catatan jujur: image belum pernah diuji build secara lokal (lingkungan
+pengembangan tanpa daemon Docker); build pertama yang terverifikasi
+berjalan di CI.
+
+## npm
+
+Paket `lp-tracer` dan `lp-trace-mcp` siap diterbitkan (field `private`
+dihapus, skrip `prepublishOnly` membangun `dist/` sebelum publish).
+Penerbitan dilakukan workflow rilis pada tag `v*` lewat Trusted
+Publishing npm (OIDC) — butuh penyiapan satu kali di npmjs.com:
+daftarkan repo ini sebagai trusted publisher untuk kedua paket. Cara
+manual (butuh login npm + 2FA):
+
+```bash
+cd tracer-mvp && npm publish
+cd ../mcp-sidecar && npm publish
+```
+
+`lp-trace-viewer` sengaja tetap privat: penampil didistribusikan
+sebagai situs statis (atau image Docker), bukan paket npm.
 
 ## Privasi
 
