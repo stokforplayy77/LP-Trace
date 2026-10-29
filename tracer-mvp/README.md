@@ -83,12 +83,13 @@ docker run --rm -v "$PWD/traces:/traces" lp-trace-tracer \
 
 | Flag | Keterangan |
 |---|---|
-| `--cdp <url>` (wajib) | Endpoint CDP, mis. `ws://127.0.0.1:9222` |
+| `--cdp <url>` (wajib) | Endpoint CDP, mis. `ws://127.0.0.1:9222`. Dapat diulang: tiap kemunculan adalah satu koneksi (satu target); URL yang sama boleh diulang untuk beberapa target pada satu proses `serve`. |
 | `--output <file>` (wajib) | File trace JSONL (izin 0600) |
-| `--session <id>` | Pengenal sesi; bila kosong, dibuat otomatis |
+| `--session <id>` | Pengenal sesi; bila kosong, dibuat otomatis. Dengan `--append`, harus sama dengan sesi file lama. |
+| `--append` | Lanjutkan file trace yang ada tanpa menimpa (resume): sesi dan `seq` bersambung, diawali baris `tracer.session_resumed`. |
 | `--include-bodies` | Rekam `postData` permintaan, disertai peringatan. Body respons tidak pernah diambil (tracer tidak memanggil `Network.getResponseBody`). |
-| `--max-bytes <n>` | Batas ukuran file (default 50 MB, minimum 4096). Bila tercapai, penulisan berhenti; data lama tidak ditimpa; cadangan 1024 byte disimpan untuk `session_ended`. |
-| `--navigate <url>` | Navigasikan target tracer ke URL (dapat diulang). Tambahan di luar Bab 4.1, lihat "Perbedaan dari spesifikasi". |
+| `--max-bytes <n>` | Batas ukuran file (default 50 MB, minimum 4096). Bila tercapai, penulisan berhenti; data lama tidak ditimpa; cadangan 1024 byte disimpan untuk `session_ended`. Dengan `--append`, batas berlaku untuk ukuran total file. |
+| `--navigate <url>` | Navigasikan koneksi ke URL (dapat diulang). Satu `--cdp`: navigasi berurutan pada target yang sama. Beberapa `--cdp`: dipasangkan berurutan (navigasi ke-i untuk koneksi ke-i). Tambahan di luar Bab 4.1, lihat "Perbedaan dari spesifikasi". |
 | `--agent-trace <file>` | Baca (tail) file trace `agent --trace` upstream selama sesi; langkah agen ditulis sebagai baris `agent.*` pada sumbu waktu yang sama (F5, lihat "Hubungan dengan `agent --trace` bawaan"). File boleh belum ada saat tracer mulai. |
 | `--wait-ms <n>` | Jeda antar navigasi (default 1500 ms). |
 | `--stay` | Tetap berjalan setelah navigasi selesai. |
@@ -107,13 +108,16 @@ Satu objek JSON per baris:
 |---|---|
 | `ts` | ISO 8601 UTC, waktu terima event menurut jam tracer |
 | `mono_ms` | Milidetik monotonik sejak sesi dimulai |
-| `seq` | Nomor urut dari 1, berurutan tanpa lompat |
-| `session` | Pengenal sesi |
-| `lightpanda_version` | Versi dari `/json/version`, atau `"unknown"` |
+| `seq` | Nomor urut dari 1, berurutan tanpa lompat (bersambung lintas resume) |
+| `session` | Pengenal sesi (sama untuk seluruh file, termasuk baris resume) |
+| `lightpanda_version` | Versi dari `/json/version` endpoint asal baris, atau `"unknown"` |
+| `endpoint` | URL CDP koneksi asal baris; `""` untuk baris bukan-CDP (`tracer.*`, `agent.*`) |
+| `endpoint_index` | Nomor urut koneksi (0, 1, 2, …); `-1` untuk baris bukan-CDP |
 | `type` | Nama method CDP verbatim, atau `tracer.*` untuk baris internal |
 | `data` | Payload setelah redaksi/pemotongan |
 
 Baris internal: `tracer.session_started` (baris pertama),
+`tracer.session_resumed` (baris pertama sesi lanjutan `--append`),
 `tracer.session_ended` (baris terakhir), dan `tracer.annotation`
 (dicadangkan untuk M3; tidak ditulis oleh M1). Contoh sintetis:
 [`trace-example.jsonl`](trace-example.jsonl).
@@ -195,6 +199,13 @@ Lihat [`M1-HASIL.md`](M1-HASIL.md).
    baris `tracer.session_ended` membawa `agentLines`, `agentSkipped`,
    dan `agentResets` (jumlah baris agen yang ditulis/dilewati/reset
    file selama sesi).
+7. **Multi-endpoint + resume (MS-DESIGN.md).** `--cdp` dapat diulang
+   (satu koneksi per kemunculan; URL sama boleh diulang) dan setiap
+   baris membawa `endpoint`/`endpoint_index`. `--append` melanjutkan
+   file trace lama (sesi + `seq` bersambung, baris
+   `tracer.session_resumed`); persistensi target browser tidak
+   didukung serve 1.0.2, yang persisten adalah file trace. Handshake
+   gagal pada koneksi mana pun bersifat fatal dan menyebut endpointnya.
 
 ## Hubungan dengan `agent --trace` bawaan
 
