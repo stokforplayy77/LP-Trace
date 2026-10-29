@@ -5,6 +5,23 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-10-29
+
+### Fixed
+
+- Balapan `annotate_trace`: penulisan anotasi kini diserialkan
+  antar-proses dengan lockfile (`<trace>.lock`, O_EXCL,
+  timeout 5 detik, kunci basi > 10 detik dicuri otomatis),
+  sehingga dua sidecar yang menganotasi file yang sama tidak
+  lagi menulis `seq` yang sama. Kegagalan mendapatkan kunci
+  menjadi penolakan tool yang rapi, bukan crash. Kunci daftar
+  penampil diperkeras (`seq` + indeks) agar `seq` duplikat
+  dari sumber mana pun tidak lagi menghilangkan baris.
+  Residu: tracer yang sedang merekam tidak memakai kunci,
+  sehingga `seq` duplikat dengan baris tracer masih mungkin
+  dalam jendela satu interval flush — didokumentasikan di
+  `docs/LOCK-DESIGN.md`.
+
 ## [0.1.6] - 2026-10-29
 
 ### Added
