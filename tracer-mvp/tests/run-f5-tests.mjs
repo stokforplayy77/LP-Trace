@@ -4,7 +4,7 @@
 // Build (tsc) dijalankan dulu oleh skrip ini, seperti run-m1-tests.mjs.
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, stat, utimes, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -18,7 +18,7 @@ const FIXTURES = join(ROOT, "tests", "fixtures");
 // Build dulu agar dist/ sesuai dengan src/ saat ini.
 await execFileAsync(join(ROOT, "node_modules", ".bin", "tsc"), { cwd: ROOT });
 
-const { convertAgentLine, redactAgentArgs, AgentTraceTailer } = await import(
+const { convertAgentLine, redactAgentArgs, AgentTraceTailer, anchorBatchTimes } = await import(
   "../dist/agent-trace.js"
 );
 
@@ -544,6 +544,147 @@ test("tailer: gating includeBodies pada file fixture results", async () => {
       assert.ok(String(tools[1].data.result).includes("no schema selector matched"));
     } finally {
       await tailerOn.stop();
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// ---------- Penjangkaran mtime (ANCHOR-DESIGN.md) ----------
+
+test("anchorBatchTimes: penyebaran batch normal dari mtime", () => {
+  const out = anchorBatchTimes([0, 9, 10, 11, 11], 1_000_000, 1_000_500);
+  assert.deepEqual(out, [999_989, 999_998, 999_999, 1_000_000, 1_000_000]);
+});
+
+test("anchorBatchTimes: satu baris mendarat pada mtime; t hilang -> null per baris", () => {
+  assert.deepEqual(anchorBatchTimes([500], 2_000_000, 2_000_100), [2_000_000]);
+  assert.deepEqual(anchorBatchTimes([0, null, 100], 3_000_000, 3_000_100), [2_999_900, null, 3_000_000]);
+  assert.deepEqual(anchorBatchTimes([null, null], 3_000_000, 3_000_100), [null, null]);
+  assert.deepEqual(anchorBatchTimes([], 3_000_000, 3_000_100), []);
+});
+
+test("anchorBatchTimes: t menurun -> seluruh batch fallback; mtime masa depan -> jangkar pada waktu baca", () => {
+  assert.deepEqual(anchorBatchTimes([0, 5000, 100], 4_000_000, 4_000_100), [null, null, null]);
+  assert.deepEqual(anchorBatchTimes([0, 100], 9_999_999, 1_000_000), [999_900, 1_000_000]);
+  assert.deepEqual(anchorBatchTimes([-5, 100], 5_000_000, 5_000_100), [null, 5_000_000]);
+});
+
+test("convertAgentLine: agentT mentah untuk penjangkaran, terpisah dari data.agent_t", () => {
+  const run = convertAgentLine('{"type":"run","t":0,"provider":"none","model":""}', false);
+  assert.equal(run.agentT, 0);
+  const tool = convertAgentLine(
+    '{"type":"tool","t":42,"step":1,"name":"goto","ms":4,"result_bytes":1,"error":false,"navigated":true,"page":{}}',
+    false,
+  );
+  assert.equal(tool.agentT, 42);
+  assert.equal(tool.data.agent_t, 42);
+  const noT = convertAgentLine('{"type":"run","provider":"none","model":""}', false);
+  assert.equal(noT.agentT, null);
+  assert.deepEqual(noT.data, { provider: "none", model: "" });
+  const badT = convertAgentLine('{"type":"tool","t":"cepat","step":1,"name":"x","page":{}}', false);
+  assert.equal(badT.agentT, null);
+  assert.equal(badT.data.agent_t, 0);
+});
+
+test("tailer: file lama (mtime dimundurkan) -> baris berjangkar pada waktu asli", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "f5-anchor-"));
+  try {
+    const file = join(dir, "agent.jsonl");
+    const fixture = await readFile(join(FIXTURES, "agent-trace-script.jsonl"), "utf8");
+    await writeFile(file, fixture);
+    const backdated = new Date(Date.now() - 60_000);
+    await utimes(file, backdated, backdated);
+    const mtimeMs = (await stat(file)).mtimeMs;
+    const rows = [];
+    const tailer = new AgentTraceTailer(file, (r) => rows.push(r), false);
+    try {
+      tailer.start();
+      await waitFor(() => rows.length >= 6, "tailer jangkar selesai");
+      await tailer.stop();
+      assert.equal(rows[0].type, "tracer.agent_attached");
+      assert.equal(rows[0].tsMs, undefined);
+      const agentRows = rows.slice(1);
+      assert.equal(agentRows.length, 5);
+      const tLast = 11;
+      for (const r of agentRows) {
+        const expected = mtimeMs - (tLast - (r.agentT ?? 0));
+        assert.ok(
+          Math.abs(r.tsMs - expected) < 5,
+          `tsMs ${r.tsMs} harus ≈ ${expected} (agentT ${r.agentT})`,
+        );
+      }
+      const tsList = agentRows.map((r) => r.tsMs);
+      assert.deepEqual(tsList, [...tsList].sort((a, b) => a - b));
+    } finally {
+      await tailer.stop();
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("tailer: batch satu tulis tersebar sesuai selisih t, bukan menumpuk", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "f5-anchor-"));
+  try {
+    const file = join(dir, "agent.jsonl");
+    await writeFile(file, "");
+    const rows = [];
+    const tailer = new AgentTraceTailer(file, (r) => rows.push(r), false);
+    try {
+      tailer.start();
+      await sleep(300);
+      await writeFile(
+        file,
+        [
+          '{"type":"run","t":0,"provider":"none","model":""}',
+          '{"type":"tool","t":1000,"step":1,"name":"goto","ms":1,"result_bytes":1,"error":false,"navigated":true,"page":{}}',
+          '{"type":"tool","t":3000,"step":2,"name":"evaluate","ms":1,"result_bytes":1,"error":false,"navigated":false,"page":{}}',
+          "",
+        ].join("\n"),
+      );
+      await waitFor(() => rows.length >= 4, "tailer batch tumbuh selesai");
+      await tailer.stop();
+      const agentRows = rows.filter((r) => r.type.startsWith("agent."));
+      assert.equal(agentRows.length, 3);
+      const [run, first, second] = agentRows;
+      assert.ok(Math.abs(first.tsMs - run.tsMs - 1000) < 5, `selisih harus 1000, dapat ${first.tsMs - run.tsMs}`);
+      assert.ok(Math.abs(second.tsMs - run.tsMs - 3000) < 5, `selisih harus 3000, dapat ${second.tsMs - run.tsMs}`);
+      const mtimeMs = (await stat(file)).mtimeMs;
+      assert.ok(Math.abs(second.tsMs - mtimeMs) < 5, "baris terakhir batch mendarat pada mtime");
+    } finally {
+      await tailer.stop();
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("tailer: t menurun dalam satu batch -> tanpa jangkar (waktu baca)", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "f5-anchor-"));
+  try {
+    const file = join(dir, "agent.jsonl");
+    await writeFile(
+      file,
+      [
+        '{"type":"run","t":0,"provider":"none","model":""}',
+        '{"type":"tool","t":5000,"step":1,"name":"goto","ms":1,"result_bytes":1,"error":false,"navigated":true,"page":{}}',
+        '{"type":"tool","t":100,"step":2,"name":"evaluate","ms":1,"result_bytes":1,"error":false,"navigated":false,"page":{}}',
+        "",
+      ].join("\n"),
+    );
+    const rows = [];
+    const tailer = new AgentTraceTailer(file, (r) => rows.push(r), false);
+    try {
+      tailer.start();
+      await waitFor(() => rows.length >= 4, "tailer t-menurun selesai");
+      await tailer.stop();
+      const agentRows = rows.filter((r) => r.type.startsWith("agent."));
+      assert.equal(agentRows.length, 3);
+      assert.ok(agentRows.every((r) => r.tsMs === undefined), "tidak ada baris yang dijangkar");
+      assert.deepEqual(agentRows.map((r) => r.agentT), [0, 5000, 100]);
+    } finally {
+      await tailer.stop();
     }
   } finally {
     await rm(dir, { recursive: true, force: true });
