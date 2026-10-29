@@ -25,7 +25,7 @@ tidak mengirim data ke mana pun. Mengikuti
 | Ekspor HAR | Subset **best-effort** saja (tanpa breakdown timing, tanpa ukuran), dilabeli demikian di UI |
 | Domain `Log` | Bukan sumber MVP; baris `Log.entryAdded` (bila ada) tampil sebagai event biasa |
 | Pembukaan lewat `file://` | **Tidak dijanjikan** (belum diuji) — jalankan lewat server statis lokal |
-| Tampilan di HP / perangkat nyata | **Belum diuji** — jangan klaim cocok di HP |
+| Tampilan di HP / perangkat nyata | Dilihat di HP nyata (Android, lewat deploy VPS, 29 Okt 2026): halaman termuat dan terlihat. Pemeriksaan detail (luapan horizontal, unduh CSV, panel live) belum dilaporkan. |
 
 ## Syarat
 
