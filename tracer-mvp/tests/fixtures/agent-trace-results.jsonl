@@ -1,0 +1,4 @@
+{"type":"run","t":0,"provider":"none","model":""}
+{"type":"tool","t":34,"step":1,"name":"goto","ms":30,"result_bytes":6,"result":"loaded","error":false,"navigated":true,"page":{"url":"http://127.0.0.1:8765/missing.html","httpStatus":404,"title":""}}
+{"type":"tool","t":36,"step":2,"name":"extract","args":{"schema":"{\"heading\":\"h1\"}"},"ms":2,"result_bytes":342,"result":"; exception: extract: no schema selector matched any element — inspect the page with tree/markdown and retry with corrected selectors; stack: Error: extract: no schema selector matched any element — inspect the page with tree/markdown and retry with corrected selectors\n    at anonymous:44:19\n    at anonymous:46:3; line: 44; caught: true","error":true,"navigated":false,"page":{"url":"http://127.0.0.1:8765/missing.html","httpStatus":404,"title":""}}
+{"type":"end","t":37,"model_calls":0,"tool_calls":2,"tokens":{"input":0,"cached":0,"cache_creation":0,"output":0}}
