@@ -42,6 +42,8 @@ function isTokenLikeParam(name: string): boolean {
   return splitNameWords(name).some((w) => TOKEN_WORDS.has(w));
 }
 
+export { isTokenLikeParam };
+
 /** Sensor nilai parameter query yang mirip token; URL lain dikembalikan utuh. */
 export function redactUrl(raw: string): string {
   let url: URL;
@@ -76,6 +78,8 @@ export function redactUrlsInText(text: string): string {
 function truncateString(s: string, maxLen: number): string {
   return s.length > maxLen ? s.slice(0, maxLen) + "…[truncated]" : s;
 }
+
+export { truncateString };
 
 export interface RedactOptions {
   /** Bila true, postData permintaan dipertahankan (dipakai --include-bodies). */
