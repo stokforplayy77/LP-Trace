@@ -13,8 +13,10 @@ tidak mengirim data ke mana pun. Mengikuti
 | Hal | Status |
 |---|---|
 | Muat `.jsonl` lewat pemilih file; baris rusak dilewati + dihitung | Terverifikasi (uji otomatis + uji asap browser) |
-| Timeline relatif detik ke-0, diwarnai per kategori | Terverifikasi (uji asap + screenshot) |
-| Waterfall dari stempel waktu tracer (`mono_ms`) | Terverifikasi pada trace nyata M1 |
+| Timeline relatif detik ke-0, diwarnai per kategori | Terverifikasi (uji asap + screenshot). Waktu relatif dari `ts` absolut sejak MS (benar lintas resume; `mono_ms` reset tiap proses tracer). |
+| Waterfall dari stempel waktu tracer (`mono_ms`) | Terverifikasi pada trace nyata M1. Entri yang melintasi batas resume dilaporkan tanpa durasi (bukan negatif). |
+| Filter endpoint (multi-endpoint) + lencana endpoint per baris | Terverifikasi (uji logika). Trace lama tanpa field endpoint tetap dibaca. |
+| Penanda sesi dilanjutkan (`tracer.session_resumed`) di metadata | Terverifikasi (uji logika). |
 | Breakdown DNS/TLS dan ukuran byte | **Tidak ditampilkan** — datanya kosong dari CDP (timing -1, `encodedDataLength` 0) |
 | Panel konsol + filter level (`log`/`warning`/`error`/`exception`) | Terverifikasi; CDP memakai `"warning"`, bukan `"warn"` |
 | Pencarian teks (URL + teks konsol) | Terverifikasi |
@@ -34,7 +36,7 @@ tidak mengirim data ke mana pun. Mengikuti
 
 ```bash
 npm install
-npm test        # 14 pemeriksaan logika murni (node:test)
+npm test        # 25 pemeriksaan logika murni (node:test)
 npm run build   # -> folder build/ (ekspor statis)
 npm run check   # svelte-check
 ```
@@ -56,7 +58,7 @@ best-effort).
 
 - `src/lib/trace.ts` — logika murni: parsing JSONL, kategori (termasuk
   `agen` untuk baris `agent.*` dari F5), waterfall, filter
-  konsol/pencarian, Panel Agen (`agentEntries`), CSV, HAR subset.
+  konsol/pencarian/endpoint, Panel Agen (`agentEntries`), CSV, HAR subset.
   Tanpa dependensi framework; diuji langsung oleh `tests/`.
 - `src/routes/+page.svelte` — seluruh UI (satu halaman).
 - `tests/trace.test.mjs` — uji otomatis logika.
