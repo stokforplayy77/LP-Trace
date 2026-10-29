@@ -357,6 +357,24 @@ test('MS waktu relatif: dari ts, benar walau mono_ms reset di batas resume', () 
 	assert.equal(durationMs(rows), 2000);
 });
 
+test('ANCHOR waktu relatif: nol = ts terawal, baris agen berjangkar yang mendahului sesi tidak negatif', () => {
+	const mk = (ts, mono_ms, seq, type) =>
+		`{"ts":"${ts}","mono_ms":${mono_ms},"seq":${seq},"session":"s1","lightpanda_version":"1.0.2","type":"${type}","data":{}}`;
+	const rows = parseTrace(
+		[
+			mk('2026-10-29T07:00:05.000Z', 0, 1, 'tracer.session_started'),
+			mk('2026-10-29T07:00:00.000Z', 0, 2, 'agent.tool'),
+			mk('2026-10-29T07:00:02.000Z', 0, 3, 'agent.tool'),
+			mk('2026-10-29T07:00:06.000Z', 1000, 4, 'tracer.session_ended')
+		].join('\n')
+	).rows;
+	assert.deepEqual(
+		rows.map((r) => relativeSeconds(rows, r)),
+		[5, 0, 2, 6]
+	);
+	assert.equal(durationMs(rows), 6000);
+});
+
 test('MS CSV: header memuat kolom endpoint', () => {
 	const csv = toCSV(parseTrace(EXAMPLE).rows);
 	assert.ok(csv.startsWith('seq,ts,mono_ms,session,lightpanda_version,endpoint,endpoint_index,type,ringkasan'));
