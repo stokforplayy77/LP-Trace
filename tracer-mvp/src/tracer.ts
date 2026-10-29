@@ -9,6 +9,7 @@ import {
   enableDomains,
   performHandshake,
 } from "./cdp.js";
+import { AgentTraceTailer } from "./agent-trace.js";
 import { redactEvent } from "./redact.js";
 import { BufferedWriter, SizeLimitReached } from "./writer.js";
 
@@ -21,6 +22,8 @@ export interface TracerOptions {
   navigateUrls: string[];
   waitMs: number;
   stay: boolean;
+  /** Path file trace `agent --trace` upstream yang di-tail (F5); null bila tidak dipakai. */
+  agentTrace: string | null;
 }
 
 export interface TracerOutcome {
@@ -99,6 +102,9 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
   let seq = 0;
   let eventsWritten = 0;
   let ended = false;
+  let shutdownRequested = false;
+  let exitCode = 0;
+  let tailer: AgentTraceTailer | null = null;
 
   // seq hanya bertambah untuk baris yang benar-benar tertulis, agar
   // nomor urut di file selalu berurutan tanpa lompat.
@@ -124,7 +130,7 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
     return ok;
   };
 
-  const writeSessionEnd = (reason: string): boolean => {
+  const writeSessionEnd = (reason: string, extra: Record<string, unknown> = {}): boolean => {
     if (ended) return false;
     ended = true;
     const nextSeq = seq + 1;
@@ -135,7 +141,7 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
       session,
       lightpanda_version: lightpandaVersion,
       type: "tracer.session_ended",
-      data: { reason },
+      data: { reason, ...extra },
     };
     const ok = writer.writeSessionEnd(JSON.stringify(row));
     if (ok) {
@@ -152,9 +158,21 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
     ...(opts.includeBodies ? { includeBodies: true } : {}),
   });
 
+  // F5: tail file trace agen bila diminta. Dimulai sedini mungkin agar
+  // langkah agen yang terjadi selama handshake pun tertangkap.
+  if (opts.agentTrace !== null) {
+    tailer = new AgentTraceTailer(
+      opts.agentTrace,
+      (row) => {
+        if (shutdownRequested || limitReached) return;
+        writeRow(row.type, row.data);
+      },
+      opts.includeBodies,
+    );
+    tailer.start();
+  }
+
   const client = new CdpClient(opts.cdpUrl);
-  let shutdownRequested = false;
-  let exitCode = 0;
 
   const shutdown = async (reason: string, code: number): Promise<void> => {
     if (shutdownRequested) return;
@@ -165,7 +183,16 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
     } catch {
       /* abaikan */
     }
-    writeSessionEnd(reason);
+    let extra: Record<string, unknown> = {};
+    if (tailer !== null) {
+      const stats = await tailer.stop();
+      extra = {
+        agentLines: stats.lines,
+        agentSkipped: stats.skipped,
+        agentResets: stats.resets,
+      };
+    }
+    writeSessionEnd(reason, extra);
     await writer.close();
   };
 
