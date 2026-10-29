@@ -79,6 +79,7 @@ export const SUMMARY_CATEGORIES = [
   "console",
   "error",
   "tracer",
+  "agent",
   "other",
 ] as const;
 
@@ -100,6 +101,9 @@ export function categoryOf(type: string): SummaryCategory {
   }
   if (type.startsWith("tracer.")) {
     return "tracer";
+  }
+  if (type.startsWith("agent.")) {
+    return "agent";
   }
   return "other";
 }
@@ -173,6 +177,13 @@ function urlsFromRow(row: TraceRow): string[] {
     pushUrl(out, data["url"]);
     return out;
   }
+  if (row.type === "agent.tool") {
+    const page = asRecord(data["page"]);
+    if (page !== null) {
+      pushUrl(out, page["url"]);
+    }
+    return out;
+  }
   return out;
 }
 
@@ -182,6 +193,20 @@ function asNumber(value: unknown): number | null {
 
 function asString(value: unknown): string | null {
   return typeof value === "string" && value !== "" ? value : null;
+}
+
+/** Agregat langkah agen (F5). Hanya angka dan nama tool; tanpa argumen, hasil, atau URL lengkap. */
+export interface AgentSummary {
+  /** true bila ada satu baris agent.* atau lebih. */
+  present: boolean;
+  toolCalls: number;
+  errors: number;
+  /** Jumlah per nama tool. */
+  tools: Record<string, number>;
+  modelCalls: number;
+  tokens: { input: number; cached: number; cache_creation: number; output: number };
+  /** Jumlah baris agent.unknown (tipe upstream belum dikenal). */
+  unknownLines: number;
 }
 
 export interface TraceSummary {
@@ -215,6 +240,8 @@ export interface TraceSummary {
   paths: string[];
   /** Jumlah baris tracer.annotation. */
   annotations: number;
+  /** Agregat langkah agen (F5); nol bila tidak ada baris agent.*. */
+  agent: AgentSummary;
   filter: SummaryCategory | null;
 }
 
@@ -258,6 +285,13 @@ export function computeSummary(
   let exceptions = 0;
   let failedRequests = 0;
   let annotations = 0;
+  let agentToolCalls = 0;
+  let agentErrors = 0;
+  let agentModelCalls = 0;
+  let agentUnknownLines = 0;
+  let agentPresent = false;
+  const agentTools: Record<string, number> = {};
+  const agentTokens = { input: 0, cached: 0, cache_creation: 0, output: 0 };
 
   for (const row of rows) {
     eventsByType[row.type] = (eventsByType[row.type] ?? 0) + 1;
@@ -272,6 +306,38 @@ export function computeSummary(
     }
     if (row.type === "tracer.annotation") {
       annotations += 1;
+    }
+    if (row.type === "agent.tool") {
+      agentPresent = true;
+      agentToolCalls += 1;
+      const raw = asRecord(row.data);
+      const name = raw !== null ? asString(raw["name"]) : null;
+      if (name !== null) {
+        agentTools[name] = (agentTools[name] ?? 0) + 1;
+      }
+      if (raw !== null && raw["error"] === true) {
+        agentErrors += 1;
+      }
+    }
+    if (row.type === "agent.end") {
+      agentPresent = true;
+      const raw = asRecord(row.data);
+      if (raw !== null) {
+        agentModelCalls += asNumber(raw["model_calls"]) ?? 0;
+        const tokens = asRecord(raw["tokens"]);
+        if (tokens !== null) {
+          agentTokens.input += asNumber(tokens["input"]) ?? 0;
+          agentTokens.cached += asNumber(tokens["cached"]) ?? 0;
+          agentTokens.cache_creation += asNumber(tokens["cache_creation"]) ?? 0;
+          agentTokens.output += asNumber(tokens["output"]) ?? 0;
+        }
+      }
+    }
+    if (row.type === "agent.run" || row.type === "agent.unknown") {
+      agentPresent = true;
+    }
+    if (row.type === "agent.unknown") {
+      agentUnknownLines += 1;
     }
     if (row.type === "Runtime.consoleAPICalled") {
       const raw = asRecord(row.data);
@@ -335,6 +401,15 @@ export function computeSummary(
     hosts: [...hosts].sort(),
     paths: [...paths].sort(),
     annotations,
+    agent: {
+      present: agentPresent,
+      toolCalls: agentToolCalls,
+      errors: agentErrors,
+      tools: agentTools,
+      modelCalls: agentModelCalls,
+      tokens: agentTokens,
+      unknownLines: agentUnknownLines,
+    },
     filter,
   };
 }
