@@ -2,7 +2,8 @@
 // Keluar bukan nol bila ada pemeriksaan gagal. Menjalankan:
 //  1. handshake + skema JSONL,  2. event inti,  3. redaksi,
 //  4. kegagalan handshake (port mati + server CDP palsu yang menolak attach),
-//  5. SIGINT -> session_ended,  6. benchmark tercatat,  7. batas ukuran.
+//  5. SIGINT -> session_ended,  6. benchmark tercatat,  7. batas ukuran,
+//  8. F5 live (korelasi agent --trace: tracer men-tail file trace agen).
 // Nol dependensi. Binary Lightpanda dicari lewat env LP_BIN, PATH, atau
 // /tmp/lp-m1/lightpanda. Build (tsc) dijalankan dulu oleh skrip ini.
 import { spawn, execFile } from "node:child_process";
@@ -553,6 +554,126 @@ async function main() {
     const rows7 = await readRows(trace7);
     check("uji 7 session_ended tetap tertulis", rows7[rows7.length - 1].type === "tracer.session_ended");
     check("uji 7 seq berurutan", rows7.every((r, i) => r.seq === i + 1));
+
+    // ---- Uji 8: F5 live — tracer men-tail file trace agen ----
+    console.log("== uji 8: F5 korelasi agent --trace (live) ==");
+    const agentScript = join(workDir, "f5-agent.js");
+    await writeFile(
+      agentScript,
+      [
+        "const page = new Page();",
+        `await page.goto("http://127.0.0.1:${HTTP_PORT}/ok.html");`,
+        'const data = page.extract({ title: "title" });',
+        'const t = page.evaluate("document.title");',
+        "return { extracted: data, evaluated: t };",
+        "",
+      ].join("\n"),
+    );
+    const agentTraceFile = join(workDir, "f5-agent-trace.jsonl");
+    const trace8 = join(workDir, "trace8.jsonl");
+    const child8 = spawn(process.execPath, [
+      ...cli.slice(1),
+      "--cdp",
+      CDP,
+      "--output",
+      trace8,
+      "--session",
+      "m1-test-8",
+      "--stay",
+      "--agent-trace",
+      agentTraceFile,
+    ]);
+    let child8Stderr = "";
+    child8.stderr.on("data", (d) => {
+      child8Stderr += d;
+    });
+    const exit8 = new Promise((resolve) => child8.on("exit", (code) => resolve(code)));
+    try {
+      // Tunggu session_started tertulis (flush berkala 250 ms).
+      let started8 = false;
+      for (let i = 0; i < 40; i++) {
+        try {
+          const t = await readFile(trace8, "utf8");
+          if (t.includes("tracer.session_started")) {
+            started8 = true;
+            break;
+          }
+        } catch {
+          /* belum ada file */
+        }
+        await sleep(250);
+      }
+      check("uji 8 session_started tertulis sebelum agen jalan", started8);
+      // Jalankan agen terhadap HTTP server lokal; file trace agen belum
+      // ada saat tracer mulai (tailer menunggu).
+      const rAgent = await runToCompletion(
+        [lpBin, "agent", agentScript, "--trace", agentTraceFile],
+        {
+          env: { LIGHTPANDA_DISABLE_TELEMETRY: "true" },
+          timeoutMs: 60000,
+        },
+      );
+      check(
+        "uji 8 agen selesai (exit 0)",
+        rAgent.code === 0,
+        `code=${rAgent.code} stdout=${rAgent.stdout.slice(0, 200)} stderr=${rAgent.stderr.slice(0, 300)}`,
+      );
+      // Beri waktu tailer mengejar (polling 250 ms).
+      await sleep(800);
+    } finally {
+      child8.kill("SIGINT");
+      const code8 = await Promise.race([
+        exit8,
+        sleep(10000).then(() => {
+          try {
+            child8.kill("SIGKILL");
+          } catch {}
+          return "timeout";
+        }),
+      ]);
+      check("uji 8 tracer keluar 0 setelah SIGINT", code8 === 0, `code=${String(code8)} stderr=${child8Stderr.slice(0, 200)}`);
+    }
+    const rows8 = await readRows(trace8);
+    check(
+      "uji 8 tracer.agent_attached tercatat",
+      rows8.some((r) => r.type === "tracer.agent_attached"),
+    );
+    const agentTools = rows8.filter((r) => r.type === "agent.tool");
+    check("uji 8 minimal 3 baris agent.tool", agentTools.length >= 3, `ditemukan ${agentTools.length}`);
+    check(
+      "uji 8 nama tool goto/extract/evaluate berurutan",
+      ["goto", "extract", "evaluate"].every((name, i) => agentTools[i]?.data?.name === name),
+      agentTools.map((r) => r.data?.name).join(","),
+    );
+    check(
+      "uji 8 step tool 1,2,3",
+      agentTools.slice(0, 3).every((r, i) => r.data?.step === i + 1),
+    );
+    check("uji 8 seq berurutan", rows8.every((r, i) => r.seq === i + 1));
+    check(
+      "uji 8 sesi konsisten di semua baris",
+      rows8.every((r) => r.session === "m1-test-8"),
+    );
+    const ended8 = rows8[rows8.length - 1];
+    check("uji 8 session_ended terakhir", ended8.type === "tracer.session_ended");
+    check(
+      "uji 8 session_ended membawa agentLines >= 3",
+      typeof ended8.data?.agentLines === "number" && ended8.data.agentLines >= 3,
+      JSON.stringify(ended8.data),
+    );
+    check(
+      "uji 8 baris agent.tool tanpa field result (tanpa --include-bodies)",
+      agentTools.every((r) => !Object.hasOwn(r.data, "result")),
+    );
+    check(
+      "uji 8 baris agent.tool membawa agent_t + page /ok.html",
+      agentTools.every(
+        (r) =>
+          typeof r.data?.agent_t === "number" &&
+          typeof r.data?.page?.url === "string" &&
+          r.data.page.url.includes("/ok.html"),
+      ),
+    );
   } finally {
     kill(serve);
     httpServer.close();
