@@ -19,6 +19,13 @@ hasil, atau URL lengkap — ditambah field `endpoints` (MS): agregat per
 koneksi CDP `{ endpoint, endpoint_index, label, rows, requests, errors }`
 dan flag `resumed` (true bila file memuat `tracer.session_resumed`).
 
+`get_trace_summary` membaca ulang file trace pada setiap pemanggilan,
+sehingga ringkasannya sudah mengikuti file yang sedang ditulis tracer
+(mode live / sesi `--append`) tanpa perubahan kode. Batasan: bila
+`annotate_trace` dipanggil bersamaan dengan tracer yang sedang menulis,
+dua baris bisa berbagi `seq` yang sama (baca-lalu-tulis tanpa kunci);
+penampil mentoleransinya karena memakai urutan file.
+
 Argumen:
 
 | Argumen | Wajib | Keterangan |
