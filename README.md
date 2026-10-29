@@ -19,7 +19,7 @@ meringkas dan menganotasi trace tersebut.
 
 | Folder | Paket | Isi |
 |---|---|---|
-| `tracer-mvp/` | `lp-tracer` | Tracer CDP: handshake Target + `sessionId`, rekam event ke JSONL teredaksi, redaksi rahasia default (M1); flag `--agent-trace` mengorelasikan langkah agen dari file `agent --trace` upstream (F5); `--cdp` dapat diulang untuk multi-endpoint dan `--append` untuk melanjutkan file trace (MS); `--live-port` menyajikan baris lewat SSE dan `--replay` menjalankan ulang navigasi dari trace lama (live mode + record/replay) |
+| `tracer-mvp/` | `lp-tracer` | Tracer CDP: handshake Target + `sessionId`, rekam event ke JSONL teredaksi, redaksi rahasia default (M1); flag `--agent-trace` mengorelasikan langkah agen dari file `agent --trace` upstream (F5); `--cdp` dapat diulang untuk multi-endpoint dan `--append` untuk melanjutkan file trace (MS); `--live-port` menyajikan baris lewat SSE dan `--replay` menjalankan ulang navigasi dari trace lama (live mode + record/replay); `--survive` membuat sesi bertahan bila satu koneksi putus selama masih ada koneksi hidup |
 | `viewer/` | `lp-trace-viewer` | Penampil trace statis: timeline, waterfall jaringan, panel konsol, pencarian, ekspor CSV/HAR (M2); kategori `agen` + Panel Agen (F5) |
 | `mcp-sidecar/` | `lp-trace-mcp` | Sidecar MCP (stdio) dengan tepat dua tool: `get_trace_summary` dan `annotate_trace` (M3); filter kategori `agent` + agregat langkah agen (F5) |
 | `docs/` | — | Dokumen perancangan v1.1 (Markdown + PDF), laporan verifikasi M0/M0b, dan desain F5 (`F5-DESIGN.md`) |
