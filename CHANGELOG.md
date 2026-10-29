@@ -7,6 +7,13 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
 
 ### Added
 
+- Live mode + record/replay (lihat `docs/LIVE-DESIGN.md`): flag
+  `--live-port <n>` menyajikan baris trace lewat SSE di 127.0.0.1
+  (`GET /events`, `GET /health`, CORS lokal); penampil mendapat panel
+  Mode Live (EventSource, baris live menggantikan tampilan file).
+  Flag `--replay <file>` menjalankan ulang navigasi tingkat atas dari
+  file trace dan membandingkan jumlah request + host per langkah
+  (laporan JSON ke stdout, `--replay-report` menulis file juga).
 - Multi-sesi + sesi persisten (lihat `docs/MS-DESIGN.md`): flag `--cdp`
   dapat diulang (satu koneksi per kemunculan; URL yang sama boleh
   diulang — terverifikasi 2 koneksi ke satu proses `serve` mendapat
