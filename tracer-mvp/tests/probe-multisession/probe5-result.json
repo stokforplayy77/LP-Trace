@@ -1,0 +1,18 @@
+{
+  "createTargetB": {
+    "ok": true,
+    "targetId": "FID-0000000001"
+  },
+  "attachB": {
+    "ok": true,
+    "sessionId": "SID-1"
+  },
+  "hrefA": "http://127.0.0.1:8779/a.html",
+  "hrefB": "http://127.0.0.1:8779/b.html",
+  "eventsA": 14,
+  "eventsB": 12,
+  "frameNavA": 1,
+  "frameNavB": 1,
+  "targetIdA": "FID-0000000001",
+  "targetIdB": "FID-0000000001"
+}
