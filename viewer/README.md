@@ -54,9 +54,10 @@ best-effort).
 
 ## Struktur
 
-- `src/lib/trace.ts` — logika murni: parsing JSONL, kategori, waterfall,
-  filter konsol/pencarian, CSV, HAR subset. Tanpa dependensi framework;
-  diuji langsung oleh `tests/`.
+- `src/lib/trace.ts` — logika murni: parsing JSONL, kategori (termasuk
+  `agen` untuk baris `agent.*` dari F5), waterfall, filter
+  konsol/pencarian, Panel Agen (`agentEntries`), CSV, HAR subset.
+  Tanpa dependensi framework; diuji langsung oleh `tests/`.
 - `src/routes/+page.svelte` — seluruh UI (satu halaman).
 - `tests/trace.test.mjs` — uji otomatis logika.
 - `tests/fixtures/real-trace.jsonl` — trace NYATA dari tracer M1 +
@@ -81,6 +82,11 @@ best-effort).
    membawa status/mimeType di dalam `data.response`. Penampil membaca
    kedua bentuk (langsung dan bersarang) — ditemukan lewat trace nyata
    dan ditutup dengan uji regresi.
+5. **Panel Agen (F5).** Baris `agent.*` dari tracer ditampilkan pada
+   kategori `agen` dengan panel langkah sendiri (nama tool, latensi,
+   penanda error, judul halaman). Baris agen yang direkam setelah trace
+   selesai mengelompok pada waktu ingest; penampil menandainya lewat
+   teks penjelasan di panel.
 
 ## Redaksi dan privasi (Bab 3.6)
 
