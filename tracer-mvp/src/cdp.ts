@@ -3,6 +3,8 @@
 // setelah attach membawa sessionId; tanpanya Lightpanda menjawab
 // BrowserContextNotLoaded (-31998).
 
+import { TracerError } from "./errors.js";
+
 export class HandshakeError extends Error {
   constructor(
     public readonly step: string,
@@ -59,9 +61,9 @@ export class CdpClient {
           /* abaikan */
         }
         reject(
-          new HandshakeError(
-            "membuka koneksi WebSocket",
-            `timeout ${timeoutMs} ms saat menghubungi ${this.url} (apakah 'lightpanda serve' berjalan?)`,
+          new TracerError(
+            "E_CDP_UNREACHABLE",
+            `tidak dapat terhubung ke ${this.url}: timeout ${timeoutMs} ms (apakah 'lightpanda serve' berjalan?)`,
           ),
         );
       }, timeoutMs);
@@ -76,8 +78,8 @@ export class CdpClient {
         settled = true;
         clearTimeout(timer);
         reject(
-          new HandshakeError(
-            "membuka koneksi WebSocket",
+          new TracerError(
+            "E_CDP_UNREACHABLE",
             `tidak dapat terhubung ke ${this.url} (apakah 'lightpanda serve' berjalan di alamat itu?)`,
           ),
         );
