@@ -1,0 +1,25 @@
+{
+  "version": "1.0.2",
+  "steps": {
+    "twoServes": {
+      "target1": "FID-0000000001",
+      "target2": "FID-0000000001",
+      "session1": "SID-1",
+      "session2": "SID-1",
+      "events1": 17,
+      "events2": 17,
+      "frameNav1": 1,
+      "frameNav2": 1,
+      "href1": null,
+      "href2": null
+    },
+    "targetsAfterDisconnect": [],
+    "reattach": {
+      "ok": false,
+      "error": "-31998 BrowserContextNotLoaded"
+    }
+  },
+  "errors": [
+    "reattach: -31998 BrowserContextNotLoaded"
+  ]
+}
