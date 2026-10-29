@@ -228,6 +228,85 @@ test("redactAgentArgs: kunci mirip rahasia -> [REDACTED], nilai dipotong 500", (
   assert.equal(String(out.nested.note).length, 500 + "…[truncated]".length);
 });
 
+test("redactAgentArgs: kunci mirip rahasia BERSARANG -> [REDACTED] utuh, tipe apa pun", () => {
+  const input = {
+    config: {
+      api_key: "SK-BERSARANG-1",
+      nested: { accessToken: "TOKEN-BERSARANG-2", keep: "tetap" },
+    },
+    list: [
+      { password: "PASS-BERSARANG-3" },
+      { label: "aman", token: 12345 },
+      "teks-biasa",
+    ],
+    tokenObj: { sub: "SUB-BERSARANG-4", sub2: "SUB-BERSARANG-5" },
+    tokenArr: ["ARR-BERSARANG-6", "ARR-BERSARANG-7"],
+    secretFlag: true,
+    secretNull: null,
+    // Perilaku lama yang harus dipertahankan: header sensitif dan
+    // parameter URL di dalam struktur bersarang tetap disensor oleh
+    // redactValue, dan nilai biasa dipertahankan.
+    opts: {
+      headers: { authorization: "Bearer HEADER-BERSARANG", "x-custom": "ok" },
+      endpoint: "https://contoh.test/x?api_key=KEY-DI-URL&q=ok",
+      note: "biasa",
+    },
+  };
+  const out = redactAgentArgs(input);
+  assert.equal(out.config.api_key, "[REDACTED]");
+  assert.equal(out.config.nested.accessToken, "[REDACTED]");
+  assert.equal(out.config.nested.keep, "tetap");
+  assert.equal(out.list[0].password, "[REDACTED]");
+  assert.equal(out.list[1].token, "[REDACTED]");
+  assert.equal(out.list[1].label, "aman");
+  assert.equal(out.list[2], "teks-biasa");
+  assert.deepEqual(out.tokenObj, "[REDACTED]");
+  assert.deepEqual(out.tokenArr, "[REDACTED]");
+  assert.equal(out.secretFlag, "[REDACTED]");
+  assert.equal(out.secretNull, "[REDACTED]");
+  assert.equal(out.opts.headers.authorization, "[REDACTED]");
+  assert.equal(out.opts.headers["x-custom"], "ok");
+  assert.ok(String(out.opts.endpoint).includes("api_key=REDACTED"));
+  assert.ok(String(out.opts.endpoint).includes("q=ok"));
+  assert.equal(out.opts.note, "biasa");
+  const blob = JSON.stringify(out);
+  assert.ok(!blob.includes("BERSARANG"), "tidak boleh ada rahasia bersarang tersisa");
+  assert.ok(!blob.includes("HEADER-BERSARANG"));
+  // Masukan tidak diubah (redaksi mengembalikan salinan baru).
+  assert.equal(input.config.api_key, "SK-BERSARANG-1");
+  assert.equal(input.list[0].password, "PASS-BERSARANG-3");
+});
+
+test("redactAgentArgs: sarang sangat dalam dibatasi tanpa melempar", () => {
+  let deep = { apiKey: "SK-PALING-DALAM" };
+  for (let i = 0; i < 40; i++) deep = { level: deep };
+  const out = redactAgentArgs(deep);
+  const blob = JSON.stringify(out);
+  assert.ok(!blob.includes("SK-PALING-DALAM"), "rahasia di dasar sarang harus disensor");
+  assert.ok(blob.includes("[REDACTED]"), "sarang di luar batas harus disensor");
+});
+
+test("convertAgentLine: argumen bersarang rahasia tidak bocor ke baris trace", () => {
+  const row = convertAgentLine(
+    JSON.stringify({
+      type: "tool",
+      t: 1,
+      step: 1,
+      name: "extract",
+      ms: 1,
+      result_bytes: 1,
+      error: false,
+      navigated: false,
+      page: { url: "http://127.0.0.1:9/x", httpStatus: 200, title: "" },
+      args: { config: { credentials: { apiKey: "SK-JALUR-LENGKAP" } } },
+    }),
+    false,
+  );
+  assert.ok(row);
+  assert.equal(row.data.args.config.credentials.apiKey, "[REDACTED]");
+  assert.ok(!JSON.stringify(row).includes("SK-JALUR-LENGKAP"));
+});
+
 test("convertAgentLine: result dipotong 2000 karakter bila includeBodies", () => {
   const row = convertAgentLine(
     JSON.stringify({
