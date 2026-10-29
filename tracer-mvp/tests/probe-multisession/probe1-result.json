@@ -1,0 +1,21 @@
+{
+  "version": "1.0.2",
+  "steps": {
+    "targetsBefore": 0,
+    "createTarget1": {
+      "ok": true,
+      "targetId": "FID-0000000001"
+    },
+    "createTarget2": {
+      "ok": false,
+      "error": "-31998 TargetAlreadyLoaded"
+    },
+    "attach1": {
+      "ok": true,
+      "sessionId": "SID-1"
+    }
+  },
+  "errors": [
+    "createTarget2: -31998 TargetAlreadyLoaded"
+  ]
+}
