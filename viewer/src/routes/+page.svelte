@@ -456,9 +456,9 @@
 			<h2>Panel Agen</h2>
 			<p class="hint">
 				Langkah tool dari file trace <code>agent --trace</code> upstream (F5), pada sumbu
-				waktu yang sama dengan event CDP. Langkah agen yang direkam setelah trace selesai
-				mengelompok pada waktu ingest; jalankan tracer bersamaan dengan agen untuk
-				korelasi waktu yang akurat.
+				waktu yang sama dengan event CDP. Sejak tracer 0.1.8, waktu langkah dijangkar
+				pada mtime file trace agen, sehingga file yang sudah selesai sebelum tracer
+				mulai pun tampil pada waktu aslinya.
 			</p>
 			{#if agentList.length === 0}
 				<p class="empty">Tidak ada langkah agen dalam trace ini.</p>
