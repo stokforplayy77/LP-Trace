@@ -7,6 +7,7 @@
 // ketidakcocokan belum tentu regresi (dinyatakan di laporan).
 
 import { readFile, writeFile } from "node:fs/promises";
+import { TracerError } from "./errors.js";
 import { runTracer, type TracerOutcome } from "./tracer.js";
 
 export type RowObject = Record<string, unknown>;
@@ -160,6 +161,8 @@ export interface ReplayOptions {
   waitMs: number;
   append: boolean;
   livePort: number | null;
+  retries: number;
+  retryDelayMs: number;
   reportPath: string | null;
 }
 
@@ -179,13 +182,15 @@ export async function runReplay(opts: ReplayOptions): Promise<ReplayOutcome> {
   try {
     input = await readTraceRows(opts.replayPath);
   } catch (e) {
-    throw new Error(
+    throw new TracerError(
+      "E_REPLAY",
       `replay gagal membaca ${opts.replayPath}: ${e instanceof Error ? e.message : String(e)}`,
     );
   }
   const steps = extractReplaySteps(input.rows);
   if (steps.length === 0) {
-    throw new Error(
+    throw new TracerError(
+      "E_REPLAY",
       `replay dibatalkan: tidak ada navigasi tingkat atas (Page.frameNavigated) dalam ${opts.replayPath}.`,
     );
   }
@@ -205,6 +210,8 @@ export async function runReplay(opts: ReplayOptions): Promise<ReplayOutcome> {
     agentTrace: null,
     append: opts.append,
     livePort: opts.livePort,
+    retries: opts.retries,
+    retryDelayMs: opts.retryDelayMs,
   });
   if (outcome.exitCode !== 0) {
     return { exitCode: outcome.exitCode, report: null };
