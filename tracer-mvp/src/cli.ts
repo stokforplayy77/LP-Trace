@@ -8,8 +8,7 @@
 import { runTracer } from "./tracer.js";
 import { runReplay } from "./replay.js";
 import { formatTracerError } from "./errors.js";
-
-const VERSION = "0.1.0";
+import { VERSION } from "./version.js";
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
 const MIN_MAX_BYTES = 4096;
 const DEFAULT_WAIT_MS = 1500;
