@@ -23,10 +23,15 @@ field `sessionError` (ROBUST): `{ code, message }` dari
 
 `get_trace_summary` membaca ulang file trace pada setiap pemanggilan,
 sehingga ringkasannya sudah mengikuti file yang sedang ditulis tracer
-(mode live / sesi `--append`) tanpa perubahan kode. Batasan: bila
-`annotate_trace` dipanggil bersamaan dengan tracer yang sedang menulis,
-dua baris bisa berbagi `seq` yang sama (baca-lalu-tulis tanpa kunci);
-penampil mentoleransinya karena memakai urutan file.
+(mode live / sesi `--append`) tanpa perubahan kode. `annotate_trace`
+menulis di bawah lockfile antar-proses (`<trace>.lock`, O_EXCL):
+panggilan bersamaan dari proses berbeda diserialkan sehingga `seq`
+tidak bentrok antar anotasi. Residu: tracer yang sedang merekam
+dapat men-flush baris dengan `seq` yang ditetapkan sebelum anotasi
+membaca file, sehingga `seq` duplikat dengan baris tracer masih
+mungkin dalam jendela satu interval flush — penampil menoleransinya
+(kunci daftar memakai `seq` + indeks) dan ringkasan tidak bergantung
+pada keunikan `seq`. Lihat `docs/LOCK-DESIGN.md`.
 
 Argumen:
 
@@ -56,7 +61,11 @@ Menambahkan **satu baris** ke file JSONL dengan `type:
 berkelanjutan dari baris terakhir + 1, `session`,
 `lightpanda_version`, `data` berisi teks anotasi). Penulisan bersifat
 append-only: isi file yang sudah ada tidak pernah diubah. Mengembalikan
-konfirmasi berisi `seq` baris yang ditulis.
+konfirmasi berisi `seq` baris yang ditulis. Penulisan diserialkan
+dengan lockfile antar-proses: bila kunci tidak didapat dalam 5 detik
+(kunci segar dipegang proses lain), tool gagal rapi dengan pesan yang
+menyebut jalur kunci; kunci basi (lebih tua dari 10 detik, pemegang
+crash) dicuri otomatis.
 
 Argumen:
 
