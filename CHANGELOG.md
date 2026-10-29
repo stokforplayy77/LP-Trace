@@ -7,6 +7,19 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
 
 ### Added
 
+- Multi-sesi + sesi persisten (lihat `docs/MS-DESIGN.md`): flag `--cdp`
+  dapat diulang (satu koneksi per kemunculan; URL yang sama boleh
+  diulang — terverifikasi 2 koneksi ke satu proses `serve` mendapat
+  target terpisah; target tidak bertahan setelah klien putus, sehingga
+  yang persisten adalah file trace). Setiap baris membawa
+  `endpoint`/`endpoint_index`; `--navigate` dipasangkan berurutan
+  dengan `--cdp` (satu `--cdp`: navigasi berurutan pada target yang
+  sama, perilaku M1). Flag `--append` melanjutkan file trace lama
+  (sesi + `seq` bersambung, baris `tracer.session_resumed`; sesi
+  berbeda atau ekor rusak ditolak tanpa menyentuh file). Penampil
+  mendapat filter endpoint + waktu relatif dari `ts`; `get_trace_summary`
+  mendapat agregat `endpoints` dan flag `resumed`. Uji: 37 pemeriksaan
+  tracer (server CDP palsu + live 2 koneksi), penampil 25, sidecar 17.
 - F5 — korelasi dengan file trace `agent --trace` upstream
   (lihat `docs/F5-DESIGN.md`): flag `--agent-trace` pada `lp-tracer`
   membaca (tail) file trace agen selama sesi dan menulis langkah agen
