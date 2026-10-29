@@ -7,6 +7,13 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
 
 ### Added
 
+- Error terbedakan + retry startup (lihat `docs/ERROR-DESIGN.md`):
+  kode stabil `E_CDP_UNREACHABLE` / `E_HANDSHAKE` / `E_CDP_CLOSED` /
+  `E_TRACE_LIMIT` / `E_RESUME` / `E_LIVE_PORT` / `E_REPLAY` /
+  `E_NAVIGATE` di stderr (`[KODE] pesan`) dan di `data.error` pada
+  `tracer.session_ended`. Flag `--retry <n>` (default 0) +
+  `--retry-delay-ms` (default 500, backoff eksponensial maks 8000 ms)
+  mengulang startup hanya bila endpoint tidak terjangkau.
 - Live mode + record/replay (lihat `docs/LIVE-DESIGN.md`): flag
   `--live-port <n>` menyajikan baris trace lewat SSE di 127.0.0.1
   (`GET /events`, `GET /health`, CORS lokal); penampil mendapat panel
