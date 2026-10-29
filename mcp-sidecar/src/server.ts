@@ -9,6 +9,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { appendAnnotation } from "./annotate.js";
+import { VERSION } from "./version.js";
 import {
   SUMMARY_CATEGORIES,
   computeSummary,
@@ -42,7 +43,7 @@ function errorResult(message: string): {
 export function createMcpServer(tracePath: string): McpServer {
   const server = new McpServer({
     name: "lp-trace-mcp",
-    version: "0.1.0",
+    version: VERSION,
   });
 
   server.tool(
