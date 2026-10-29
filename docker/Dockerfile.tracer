@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1
+# Image tracer: Lightpanda 1.0.2 (versi acuan yang dikunci) + lp-tracer.
+# Konteks build = akar repo:  docker build -f docker/Dockerfile.tracer .
+# Jalankan: docker run --rm -v "$PWD/traces:/traces" lp-trace-tracer \
+#             --output /traces/trace.jsonl --navigate https://example.com
+# Catatan: image ini TIDAK diuji build secara lokal (sandbox tanpa daemon
+# Docker); build pertama yang terverifikasi berjalan di CI GitHub Actions.
+FROM node:24-bookworm-slim AS build
+WORKDIR /app
+COPY tracer-mvp/package.json tracer-mvp/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY tracer-mvp/tsconfig.json ./tsconfig.json
+COPY tracer-mvp/src ./src
+RUN npm run build
+
+FROM node:24-bookworm-slim AS runtime
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+# Unduh binary Lightpanda 1.0.2 (x86_64-linux) dan verifikasi versinya.
+RUN curl -sL --max-time 300 -o /usr/local/bin/lightpanda \
+      https://github.com/lightpanda-io/browser/releases/download/1.0.2/lightpanda-x86_64-linux \
+  && chmod +x /usr/local/bin/lightpanda \
+  && test "$(lightpanda version)" = "1.0.2"
+COPY --from=build /app/dist ./dist
+COPY tracer-mvp/package.json ./
+COPY tracer-mvp/LICENSE ./
+COPY docker/entrypoint-tracer.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENV LIGHTPANDA_DISABLE_TELEMETRY=true
+VOLUME ["/traces"]
+ENTRYPOINT ["/entrypoint.sh"]
