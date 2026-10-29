@@ -5,6 +5,23 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-10-30
+
+### Fixed
+
+- Korelasi agen pasca-hoc: baris `agent.*` kini dijangkar pada mtime
+  file trace agen per batch (baris terakhir batch mendarat pada
+  mtime, baris sebelumnya tersebar mundur sesuai selisih `t`),
+  sehingga file agen yang sudah selesai sebelum tracer mulai tampil
+  pada waktu aslinya, bukan menumpuk pada waktu baca. Batch dengan
+  urutan `t` menurun memakai waktu baca (perilaku F5 lama);
+  `mono_ms` baris berjangkar dibatasi bawah 0. Detik ke-0 garis
+  waktu penampil dan durasi ringkasan sidecar kini memakai
+  `ts` terawal–terakhir (min/maks), bukan baris pertama/terakhir
+  urutan file — identik untuk file normal. Teks penjelasan Panel
+  Agen diperbarui (klaim "mengelompok pada waktu ingest" sudah
+  tidak berlaku).
+
 ## [0.1.7] - 2026-10-29
 
 ### Fixed
