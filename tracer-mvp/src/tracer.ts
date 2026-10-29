@@ -243,6 +243,9 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
   }
 
   const startMono = performance.now();
+  // Pasangan jam dinding untuk startMono: dipakai menghitung mono_ms
+  // baris agen berjangkar (ts berjangkar - startWallMs, dibatasi 0).
+  const startWallMs = Date.now();
   let ended = false;
   let shutdownRequested = false;
   let exitCode = 0;
@@ -250,15 +253,24 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
 
   // seq hanya bertambah untuk baris yang benar-benar tertulis, agar
   // nomor urut di file selalu berurutan tanpa lompat (termasuk saat resume).
+  // timeMs (opsional, hanya baris agen berjangkar): waktu dinding absolut
+  // (ms epoch) dari penjangkaran mtime; mono_ms dihitung dari selisihnya
+  // dengan startWallMs dan dibatasi bawah 0. Tanpa timeMs, ts/mono_ms
+  // memakai waktu baca seperti biasa.
   const writeRow = (
     type: string,
     data: Record<string, unknown>,
     origin: RowOrigin = { endpoint: "", endpointIndex: -1, version: lightpandaVersion },
+    timeMs?: number,
   ): boolean => {
     const nextSeq = seq + 1;
+    const wallMs = timeMs ?? Date.now();
     const row = {
-      ts: new Date().toISOString(),
-      mono_ms: Math.round(performance.now() - startMono),
+      ts: new Date(wallMs).toISOString(),
+      mono_ms:
+        timeMs === undefined
+          ? Math.round(performance.now() - startMono)
+          : Math.max(0, Math.round(timeMs - startWallMs)),
       seq: nextSeq,
       session,
       lightpanda_version: origin.version,
@@ -334,7 +346,7 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
       opts.agentTrace,
       (row) => {
         if (shutdownRequested || limitReached) return;
-        writeRow(row.type, row.data);
+        writeRow(row.type, row.data, undefined, row.tsMs);
       },
       opts.includeBodies,
     );
