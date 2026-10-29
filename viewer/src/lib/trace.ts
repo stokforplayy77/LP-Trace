@@ -18,10 +18,11 @@ export interface ParsedTrace {
 	skipped: number;
 }
 
-export type Category = 'navigasi' | 'network' | 'konsol' | 'error' | 'tracer' | 'lainnya';
+export type Category = 'navigasi' | 'network' | 'konsol' | 'error' | 'tracer' | 'agen' | 'lainnya';
 
 export function categoryOf(type: string): Category {
 	if (type.startsWith('tracer.')) return 'tracer';
+	if (type.startsWith('agent.')) return 'agen';
 	if (type === 'Runtime.exceptionThrown' || type === 'Network.loadingFailed') return 'error';
 	if (type === 'Runtime.consoleAPICalled') return 'konsol';
 	if (type.startsWith('Page.')) return 'navigasi';
@@ -138,8 +139,30 @@ export function summarize(row: TraceRow): string {
 		}
 		case 'DOM.documentUpdated':
 			return 'dokumen diperbarui (penanda kasar)';
+		case 'agent.tool': {
+			const page = nestedRecord(d, 'page');
+			const title = page ? asString(page.title) : '';
+			const ms = typeof d.ms === 'number' ? ` (${d.ms} ms)` : '';
+			const err = d.error === true ? ' — error' : '';
+			return `${asString(d.name)}${ms}${err}${title ? ` — ${title}` : ''}`;
+		}
+		case 'agent.run':
+			return `agen mulai${d.provider ? ` (${asString(d.provider)}${d.model ? ` / ${asString(d.model)}` : ''})` : ''}`;
+		case 'agent.end': {
+			const tokens = nestedRecord(d, 'tokens');
+			const totalTokens = tokens
+				? ['input', 'cached', 'cache_creation', 'output'].reduce(
+						(sum, k) => sum + (typeof tokens[k] === 'number' ? (tokens[k] as number) : 0),
+						0
+					)
+				: 0;
+			return `agen selesai: ${asString(d.tool_calls)} tool call, ${asString(d.model_calls)} model call, ${totalTokens} token`;
+		}
+		case 'agent.unknown':
+			return `baris agen tak dikenal: ${asString(d.agent_type)}`;
 		default:
-			if (row.type.startsWith('tracer.')) return asString(d.reason) || asString(d.cdp) || row.type;
+			if (row.type.startsWith('tracer.')) return asString(d.reason) || asString(d.cdp) || asString(d.path) || row.type;
+			if (row.type.startsWith('agent.')) return row.type;
 			return urlOf(d) || row.type;
 	}
 }
@@ -261,11 +284,47 @@ export function groupWaterfall(rows: TraceRow[]): WaterfallEntry[] {
 	});
 }
 
+export interface AgentEntry {
+	row: TraceRow;
+	step: number;
+	name: string;
+	ms: number;
+	error: boolean;
+	pageTitle: string;
+	pageUrl: string;
+	httpStatus: number | null;
+}
+
+/** Entri Panel Agen (F5): baris agent.tool terurut waktu. */
+export function agentEntries(rows: TraceRow[]): AgentEntry[] {
+	const out: AgentEntry[] = [];
+	for (const row of rows) {
+		if (row.type !== 'agent.tool') continue;
+		const d = row.data;
+		const page = nestedRecord(d, 'page');
+		out.push({
+			row,
+			step: typeof d.step === 'number' ? d.step : 0,
+			name: asString(d.name),
+			ms: typeof d.ms === 'number' ? d.ms : 0,
+			error: d.error === true,
+			pageTitle: page ? asString(page.title) : '',
+			pageUrl: page ? asString(page.url) : '',
+			httpStatus: page && typeof page.httpStatus === 'number' ? page.httpStatus : null
+		});
+	}
+	return out;
+}
+
 /** Teks yang dicari: URL + teks konsol + tipe event. */
 export function searchableText(row: TraceRow): string {
 	const parts = [row.type, summarize(row), urlOf(row.data)];
 	if (row.type === 'Runtime.consoleAPICalled' && Array.isArray(row.data.args)) {
 		parts.push(row.data.args.map(asString).join(' '));
+	}
+	if (row.type.startsWith('agent.')) {
+		const page = nestedRecord(row.data, 'page');
+		if (page) parts.push(asString(page.url), asString(page.title));
 	}
 	return parts.join(' ').toLowerCase();
 }
