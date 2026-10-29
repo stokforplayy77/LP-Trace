@@ -153,7 +153,9 @@ test("get_trace_summary atas fixture nyata cocok dengan hitungan independen", as
     assert.deepEqual(summary.errorBreakdown, { exceptions: 2, failedRequests: 1 });
     assert.equal(summary.durationMs, expected.duration);
     assert.equal(summary.durationMs, 2433);
-    assert.equal(summary.durationSource, "mono_ms");
+    assert.equal(summary.durationSource, "ts");
+    assert.deepEqual(summary.endpoints, []);
+    assert.equal(summary.resumed, false);
     assert.deepEqual(summary.eventsByType, expected.byType);
     assert.deepEqual(summary.consoleByLevel, expected.consoleLevels);
     assert.deepEqual(summary.consoleByLevel, { log: 1, warning: 1, error: 1 });
@@ -660,5 +662,94 @@ test("F5 field agent nol pada trace tanpa baris agen", async () => {
       tokens: { input: 0, cached: 0, cache_creation: 0, output: 0 },
       unknownLines: 0,
     });
+  });
+});
+
+test("MS ringkasan: agregat per endpoint + resumed pada trace multi-endpoint", async (t) => {
+  const dir = await tmpDir(t);
+  const tracePath = path.join(dir, "multi.jsonl");
+  const row = (seq, ts, mono_ms, type, endpoint, endpoint_index, data) =>
+    JSON.stringify({
+      ts,
+      mono_ms,
+      seq,
+      session: "ms-sidecar",
+      lightpanda_version: "1.0.2",
+      endpoint,
+      endpoint_index,
+      type,
+      data,
+    });
+  const lines = [
+    row(1, "2026-10-29T07:00:00.000Z", 0, "tracer.session_started", "", -1, {
+      cdp: "ws://127.0.0.1:9222",
+      endpoints: ["ws://127.0.0.1:9222", "ws://127.0.0.1:9222"],
+    }),
+    row(2, "2026-10-29T07:00:00.100Z", 100, "Network.requestWillBeSent", "ws://127.0.0.1:9222", 0, {
+      request: { url: "http://127.0.0.1:8771/a.html" },
+    }),
+    row(3, "2026-10-29T07:00:00.200Z", 200, "Network.requestWillBeSent", "ws://127.0.0.1:9222", 1, {
+      request: { url: "http://127.0.0.1:8771/b.html" },
+    }),
+    row(4, "2026-10-29T07:00:00.300Z", 300, "Runtime.exceptionThrown", "ws://127.0.0.1:9222", 1, {
+      exceptionDetails: { text: "Uncaught" },
+    }),
+    row(5, "2026-10-29T07:00:00.400Z", 400, "tracer.session_ended", "", -1, { reason: "navigations-done" }),
+    row(6, "2026-10-29T07:00:00.500Z", 0, "tracer.session_resumed", "", -1, {
+      previousRows: 5,
+      resumedFromSeq: 6,
+    }),
+    row(7, "2026-10-29T07:00:00.600Z", 100, "Network.requestWillBeSent", "ws://127.0.0.1:9222", 0, {
+      request: { url: "http://127.0.0.1:8771/a.html" },
+    }),
+  ];
+  await fs.writeFile(tracePath, lines.join("\n") + "\n", "utf8");
+  await withClient(tracePath, async (client) => {
+    const summary = await callToolJson(client, "get_trace_summary", {});
+    assert.equal(summary.rows, 7);
+    assert.equal(summary.requests, 3);
+    assert.equal(summary.errors, 1);
+    assert.equal(summary.resumed, true);
+    assert.equal(summary.durationMs, 600);
+    assert.equal(summary.durationSource, "ts");
+    assert.deepEqual(summary.endpoints, [
+      {
+        endpoint: "ws://127.0.0.1:9222",
+        endpoint_index: 0,
+        label: "ws://127.0.0.1:9222 #0",
+        rows: 2,
+        requests: 2,
+        errors: 0,
+      },
+      {
+        endpoint: "ws://127.0.0.1:9222",
+        endpoint_index: 1,
+        label: "ws://127.0.0.1:9222 #1",
+        rows: 2,
+        requests: 1,
+        errors: 1,
+      },
+    ]);
+  });
+});
+
+test("MS anotasi: baris anotasi membawa field endpoint kosong/-1", async (t) => {
+  const dir = await tmpDir(t);
+  const tracePath = path.join(dir, "trace.jsonl");
+  await fs.writeFile(
+    tracePath,
+    '{"ts":"2026-10-29T07:00:00.000Z","mono_ms":0,"seq":1,"session":"s1","lightpanda_version":"1.0.2","endpoint":"ws://127.0.0.1:9222","endpoint_index":0,"type":"tracer.session_started","data":{}}\n',
+    "utf8",
+  );
+  await withClient(tracePath, async (client) => {
+    const result = await callToolJson(client, "annotate_trace", { text: "catatan uji" });
+    assert.equal(result.seq, 2);
+    const rows = (await fs.readFile(tracePath, "utf8"))
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l));
+    assert.equal(rows[1].type, "tracer.annotation");
+    assert.equal(rows[1].endpoint, "");
+    assert.equal(rows[1].endpoint_index, -1);
   });
 });
