@@ -227,6 +227,12 @@ export interface EndpointSummary {
   errors: number;
 }
 
+/** Error akhir sesi dari baris tracer.session_ended (tahap error). */
+export interface SessionErrorSummary {
+  code: string;
+  message: string;
+}
+
 export interface TraceSummary {
   /** true bila tidak ada baris yang diringkas (file kosong/tidak ada, atau filter tanpa hasil). */
   empty: boolean;
@@ -264,6 +270,8 @@ export interface TraceSummary {
   endpoints: EndpointSummary[];
   /** true bila file memuat baris tracer.session_resumed (sesi dilanjutkan dengan --append). */
   resumed: boolean;
+  /** Error dari tracer.session_ended TERAKHIR; null bila sesi berakhir bersih atau tanpa session_ended. */
+  sessionError: SessionErrorSummary | null;
   filter: SummaryCategory | null;
 }
 
@@ -319,11 +327,21 @@ export function computeSummary(
     { endpoint: string; endpoint_index: number; rows: number; requests: number; errors: number }
   >();
   let resumed = false;
+  let sessionError: SessionErrorSummary | null = null;
 
   for (const row of rows) {
     eventsByType[row.type] = (eventsByType[row.type] ?? 0) + 1;
     if (row.type === "tracer.session_resumed") {
       resumed = true;
+    }
+    if (row.type === "tracer.session_ended") {
+      // Yang terakhir menang: file --append bisa memuat session_ended
+      // per segmen; tanpa data.error berarti segmen itu berakhir bersih.
+      const raw = asRecord(row.data);
+      const err = raw !== null ? asRecord(raw["error"]) : null;
+      const code = err !== null ? asString(err["code"]) : null;
+      const message = err !== null ? (asString(err["message"]) ?? "") : "";
+      sessionError = code !== null ? { code, message } : null;
     }
     if (row.endpoint !== "") {
       const key = `${row.endpoint_index}\n${row.endpoint}`;
@@ -474,6 +492,7 @@ export function computeSummary(
     },
     endpoints,
     resumed,
+    sessionError,
     filter,
   };
 }
