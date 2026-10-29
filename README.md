@@ -51,8 +51,11 @@ redaksi, ada di [docs/dokumen-perancangan-v1.1.md](docs/dokumen-perancangan-v1.1
   trace agen yang sudah selesai bersifat perkiraan (langkah
   mengelompok pada waktu ingest); korelasi waktu yang akurat butuh
   tracer berjalan bersamaan dengan agen.
-- Belum diuji / tidak diklaim: Playwright, pembukaan penampil lewat
+- Belum diuji / tidak diklaim: pembukaan penampil lewat
   `file://`, dan integrasi dengan aplikasi klien MCP tertentu.
+  Koeksistensi Playwright terverifikasi (ROBUST): `connectOverCDP`
+  berdampingan dengan tracer; tracer tidak mengamati navigasi
+  Playwright (satu target per koneksi).
   Penampil sudah dilihat di HP nyata (Android, lewat deploy VPS,
   29 Okt 2026): halaman termuat dan terlihat; pemeriksaan detail
   (luapan horizontal, unduh CSV, panel live) belum dilaporkan.
