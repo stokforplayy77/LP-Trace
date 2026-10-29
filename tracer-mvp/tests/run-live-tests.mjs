@@ -94,7 +94,10 @@ function startFakeCdp(port, opts = {}) {
       );
       let buf = Buffer.alloc(0);
       let frag = Buffer.alloc(0);
+      // Soket klien boleh putus kapan saja; server uji tidak boleh crash.
+      socket.on("error", () => {});
       const sendFrame = (opcode, payload) => {
+        if (socket.destroyed) return;
         const data = Buffer.isBuffer(payload) ? payload : Buffer.from(payload);
         let header;
         if (data.length < 126) {
@@ -110,7 +113,11 @@ function startFakeCdp(port, opts = {}) {
           header[1] = 127;
           header.writeBigUInt64BE(BigInt(data.length), 2);
         }
-        socket.write(Buffer.concat([header, data]));
+        try {
+          socket.write(Buffer.concat([header, data]));
+        } catch {
+          /* soket sudah putus: abaikan */
+        }
       };
       const emit = (method, params) => {
         sendFrame(1, JSON.stringify({ method, params, sessionId: "SID-1" }));
