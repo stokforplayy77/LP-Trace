@@ -19,13 +19,21 @@
   "license": "Apache-2.0",
   "main": "./dist/cli.js",
   "name": "lp-tracer",
-  "private": true,
   "scripts": {
     "bench": "node tests/benchmark.mjs",
     "build": "tsc",
     "start": "node dist/cli.js",
-    "test": "node tests/run-m1-tests.mjs"
+    "test": "node tests/run-m1-tests.mjs",
+    "prepublishOnly": "npm run build"
   },
   "type": "module",
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/stokforplayy77/LP-Trace.git",
+    "directory": "tracer-mvp"
+  },
+  "bugs": {
+    "url": "https://github.com/stokforplayy77/LP-Trace/issues"
+  }
 }
