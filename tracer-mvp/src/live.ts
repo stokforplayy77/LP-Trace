@@ -6,6 +6,7 @@
 // /health. Tanpa dependensi.
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { TracerError } from "./errors.js";
 
 export interface LiveServer {
   readonly port: number;
@@ -91,7 +92,8 @@ export async function startLiveServer(
   await new Promise<void>((resolve, reject) => {
     server.once("error", (err) => {
       reject(
-        new Error(
+        new TracerError(
+          "E_LIVE_PORT",
           `server live gagal dibuka di 127.0.0.1:${port}: ${err instanceof Error ? err.message : String(err)} (apakah port sudah dipakai?)`,
         ),
       );
