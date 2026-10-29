@@ -1,0 +1,19 @@
+# syntax=docker/dockerfile:1
+# Image penampil: build statis lp-trace-viewer disajikan nginx.
+# Konteks build = akar repo:  docker build -f docker/Dockerfile.viewer .
+# Jalankan: docker run --rm -p 8080:80 lp-trace-viewer
+# lalu buka http://localhost:8080 dan pilih file .jsonl.
+# Catatan: image ini TIDAK diuji build secara lokal (sandbox tanpa daemon
+# Docker); build pertama yang terverifikasi berjalan di CI GitHub Actions.
+FROM node:24-bookworm-slim AS build
+WORKDIR /app
+COPY viewer/package.json viewer/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY viewer/tsconfig.json viewer/vite.config.ts ./
+COPY viewer/src ./src
+COPY viewer/static ./static
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=build /app/build /usr/share/nginx/html
+EXPOSE 80
