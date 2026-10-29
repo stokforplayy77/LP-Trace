@@ -51,9 +51,11 @@ redaksi, ada di [docs/dokumen-perancangan-v1.1.md](docs/dokumen-perancangan-v1.1
   trace agen yang sudah selesai bersifat perkiraan (langkah
   mengelompok pada waktu ingest); korelasi waktu yang akurat butuh
   tracer berjalan bersamaan dengan agen.
-- Belum diuji / tidak diklaim: Playwright, tampilan penampil di HP
-  nyata, pembukaan penampil lewat `file://`, dan integrasi dengan
-  aplikasi klien MCP tertentu.
+- Belum diuji / tidak diklaim: Playwright, pembukaan penampil lewat
+  `file://`, dan integrasi dengan aplikasi klien MCP tertentu.
+  Penampil sudah dilihat di HP nyata (Android, lewat deploy VPS,
+  29 Okt 2026): halaman termuat dan terlihat; pemeriksaan detail
+  (luapan horizontal, unduh CSV, panel live) belum dilaporkan.
 
 ## Cara pakai singkat
 
@@ -127,9 +129,9 @@ docker run --rm -i -v "$PWD:/traces" lp-trace-mcp --trace /traces/trace.jsonl
 
 Pada tag `v*`, workflow rilis mem-push image ke GHCR sebagai
 `ghcr.io/stokforplayy77/lp-trace-tracer|viewer|mcp-sidecar:<versi>`.
-Catatan jujur: image belum pernah diuji build secara lokal (lingkungan
-pengembangan tanpa daemon Docker); build pertama yang terverifikasi
-berjalan di CI.
+Catatan jujur: image tidak diuji build secara lokal (lingkungan
+pengembangan tanpa daemon Docker); build terverifikasi lewat CI
+GitHub Actions (job Docker hijau pada tiap push sejak M4).
 
 ## npm
 
