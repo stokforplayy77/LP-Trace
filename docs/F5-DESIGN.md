@@ -111,8 +111,15 @@ CDP, sehingga satu file trace memuat kedua sisi dalam satu sesi.
 - `args`: kunci dipertahankan; tiap nilai string disensor URL-nya dan
   dipotong 500 karakter (aturan argumen konsol). Nilai pada kunci yang
   namanya mirip rahasia (`token`, `key`, `secret`, `password`,
-  `auth`) diganti `[REDACTED]` utuh. Nilai non-string melewati
-  `redactValue` yang sama dengan event CDP.
+  `auth`) diganti `[REDACTED]` utuh — pada KEDALAMAN BERAPA PUN
+  (objek dan array bersarang) dan untuk TIPE NILAI APA PUN. Nilai
+  non-string yang bukan kunci mirip rahasia melewati `redactValue`
+  yang sama dengan event CDP (header sensitif, URL, postData).
+  Struktur lebih dalam dari 32 tingkat disensor utuh sebagai tindakan
+  pengamanan terhadap sarang buatan yang ekstrem. (Perilaku awal F5
+  hanya menyensor kunci tingkat atas yang bernilai string; celah
+  rahasia bersarang itu diperbaiki pada 0.1.5, lihat
+  `docs/REDACT-HASIL.md`.)
 - `result`: TIDAK PERNAH ditulis kecuali `--include-bodies` aktif.
   Bila ditulis, dipotong 2000 karakter dan disensor URL-nya. Ini
   sejajar dengan default upstream (`--trace-results` mati) dan
