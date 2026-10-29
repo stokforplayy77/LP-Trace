@@ -341,7 +341,7 @@
 				<p class="empty">Tidak ada event yang cocok dengan filter saat ini.</p>
 			{:else}
 				<ol class="timeline">
-					{#each timelineRows as row (row.seq)}
+					{#each timelineRows as row, i (row.seq + "-" + i)}
 						<li>
 							<span class="time">{formatSeconds(relativeSeconds(rows, row))}</span>
 							<span class="track"
@@ -442,7 +442,7 @@
 				<p class="empty">Tidak ada log konsol atau exception yang cocok dengan filter saat ini.</p>
 			{:else}
 				<ol class="console-list">
-					{#each consoleList as entry (entry.row.seq)}
+					{#each consoleList as entry, i (entry.row.seq + "-" + i)}
 						<li>
 							<span class="time">{formatSeconds(relativeSeconds(rows, entry.row))}</span>
 							<span class="badge level-{entry.level}">{entry.level}</span>
@@ -464,7 +464,7 @@
 				<p class="empty">Tidak ada langkah agen dalam trace ini.</p>
 			{:else}
 				<ol class="console-list">
-					{#each agentList as entry (entry.row.seq)}
+					{#each agentList as entry, i (entry.row.seq + "-" + i)}
 						<li>
 							<span class="time">{formatSeconds(relativeSeconds(rows, entry.row))}</span>
 							<span class="badge">langkah {entry.step}</span>
