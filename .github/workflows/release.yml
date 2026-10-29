@@ -1,0 +1,76 @@
+name: Rilis
+
+# Berjalan saat tag v* di-push (mis. v0.1.0). Image Docker di-push ke
+# GHCR memakai GITHUB_TOKEN bawaan. Publish npm memakai Trusted
+# Publishing (OIDC) dan BUTUH penyiapan satu kali di npmjs.com sebelum
+# rilis pertama: daftarkan repo ini sebagai trusted publisher untuk
+# paket lp-tracer dan lp-trace-mcp (Settings paket -> Publishing
+# access -> Trusted Publishers). Tanpa penyiapan itu, job npm gagal
+# dengan error autentikasi yang jelas; job Docker tidak terpengaruh.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  docker:
+    name: Push image Docker ke GHCR
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [tracer, viewer, mcp-sidecar]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login ke GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Metadata image
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/lp-trace-${{ matrix.image }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build dan push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.${{ matrix.image }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  npm:
+    name: Publish npm (tracer + sidecar)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [tracer-mvp, mcp-sidecar]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish
+        working-directory: ${{ matrix.package }}
+        run: |
+          npm ci
+          npm publish --provenance
