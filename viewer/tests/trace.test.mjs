@@ -13,6 +13,7 @@ import {
 	filterRows,
 	groupWaterfall,
 	hasResumedMarker,
+	parseLiveEvent,
 	parseTrace,
 	parseTraceLine,
 	relativeSeconds,
@@ -380,4 +381,32 @@ test('MS waterfall: endpoint terbawa; durasi negatif lintas resume menjadi null'
 	assert.equal(wf[0].endpoint, 'ws://127.0.0.1:9222');
 	assert.equal(wf[0].endpoint_index, 0);
 	assert.equal(wf[0].totalMs, null);
+});
+
+test('LIVE parseLiveEvent: payload SSE valid jadi baris; rusak jadi null', () => {
+	const row = parseLiveEvent(
+		'{"ts":"2026-10-29T07:00:00.000Z","mono_ms":10,"seq":1,"session":"s1","lightpanda_version":"1.0.2","endpoint":"ws://127.0.0.1:9222","endpoint_index":0,"type":"Network.requestWillBeSent","data":{}}'
+	);
+	assert.ok(row);
+	assert.equal(row.type, 'Network.requestWillBeSent');
+	assert.equal(row.endpoint_index, 0);
+	assert.equal(parseLiveEvent('{bukan json'), null);
+	assert.equal(parseLiveEvent(''), null);
+	assert.equal(parseLiveEvent('{"type":123,"data":{}}'), null);
+});
+
+test('LIVE baris dari SSE mengalir ke waterfall/filter yang sama', () => {
+	const rows = [
+		parseLiveEvent(
+			'{"ts":"2026-10-29T07:00:00.000Z","mono_ms":0,"seq":1,"session":"s1","lightpanda_version":"1.0.2","endpoint":"ws://127.0.0.1:9222","endpoint_index":0,"type":"Network.requestWillBeSent","data":{"requestId":"L1","url":"https://example.com/live","method":"GET","type":"Document"}}'
+		),
+		parseLiveEvent(
+			'{"ts":"2026-10-29T07:00:00.100Z","mono_ms":100,"seq":2,"session":"s1","lightpanda_version":"1.0.2","endpoint":"ws://127.0.0.1:9222","endpoint_index":0,"type":"Network.loadingFinished","data":{"requestId":"L1"}}'
+		)
+	].filter(Boolean);
+	const wf = groupWaterfall(rows);
+	assert.equal(wf.length, 1);
+	assert.equal(wf[0].url, 'https://example.com/live');
+	assert.equal(wf[0].totalMs, 100);
+	assert.equal(filterRows(rows, 'live', []).length, 1);
 });
