@@ -163,6 +163,7 @@ export interface ReplayOptions {
   livePort: number | null;
   retries: number;
   retryDelayMs: number;
+  survive: boolean;
   reportPath: string | null;
 }
 
@@ -212,6 +213,7 @@ export async function runReplay(opts: ReplayOptions): Promise<ReplayOutcome> {
     livePort: opts.livePort,
     retries: opts.retries,
     retryDelayMs: opts.retryDelayMs,
+    survive: opts.survive,
   });
   if (outcome.exitCode !== 0) {
     return { exitCode: outcome.exitCode, report: null };
