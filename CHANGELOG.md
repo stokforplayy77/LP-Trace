@@ -5,6 +5,22 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-29
+
+### Ditambahkan
+
+- Uji ketahanan (ROBUST): koeksistensi Playwright (`connectOverCDP`
+  berdampingan dengan tracer), sesi panjang 20 detik (seq bersambung,
+  RSS < 256 MB), beban besar 101 permintaan; `playwright-core` sebagai
+  `devDependency` pengujian tracer.
+- Field `sessionError` pada `get_trace_summary`: `{code, message}`
+  dari `tracer.session_ended` terakhir, `null` bila berakhir bersih.
+
+### Temuan
+
+- Lightpanda 1.0.2 tidak me-fetch `<img>` (0 hit server lokal);
+  didokumentasikan, bukan bug tracer.
+
 ## [0.1.2] - 2026-10-29
 
 ### Diperbaiki
