@@ -7,8 +7,7 @@
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createMcpServer } from "./server.js";
-
-const VERSION = "0.1.0";
+import { VERSION } from "./version.js";
 
 const HELP = `lp-trace-mcp ${VERSION} — sidecar MCP untuk trace Lightpanda (M3)
 
