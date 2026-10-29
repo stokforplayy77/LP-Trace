@@ -44,6 +44,22 @@ dipakai, dan resolver uji ketahanan memeriksanya).
   di-push sebelum suite ini hijau.
 - Penampil: 27/27, `svelte-check` bersih (tidak berubah di tahap ini).
 
+## Catatan CI 29 Oktober 2026 (perbaikan harness, setelah rilis 0.1.4)
+
+- Run CI untuk commit 0.1.4 (`a8e4f76c`) gagal di kedua job uji
+  (Node 22 + 24) dengan gejala `timeout menunggu tracer keluar` pada
+  uji 1 rangkaian ini. Penyebabnya harness, bukan tracer: rangkaian
+  ini satu-satunya yang tidak menjalankan build `tsc` dulu, sehingga
+  di checkout bersih CI `dist/cli.js` tidak ada, proses anak mati
+  seketika, dan `waitForExit` — yang memasang listener `exit` sesudah
+  proses mati — menggantung sampai timeout 30 detik. Direproduksi
+  lokal dengan `dist/` dihapus (gejala identik), lalu diperbaiki:
+  build `tsc` di awal rangkaian, penjaga proses-sudah-keluar di
+  `waitForExit`, dan pemeriksaan jumlah baris eksplisit. Rangkaian
+  menjadi 23 pemeriksaan, seluruh rantai tracer hijau dari `dist/`
+  yang dihapus. Tidak ada perubahan kode produk; tidak perlu rilis
+  npm baru.
+
 ## Batas yang tersisa
 
 - Sesi panjang diuji 20 detik, bukan 60 detik atau berjam-jam; RSS
