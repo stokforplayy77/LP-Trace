@@ -15,6 +15,8 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
+import { acquireLock, lockPathFor, LockAcquisitionError } from "../dist/lockfile.js";
+
 const execFileAsync = promisify(execFile);
 
 const SERVER = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
@@ -824,5 +826,112 @@ test("ROBUST sessionError: dari session_ended terakhir, null bila berakhir bersi
       code: "E_TRACE_LIMIT",
       message: "batas ukuran tercapai",
     });
+  });
+});
+
+// --- Kunci file antar-proses (LOCK-DESIGN.md) ---
+
+test("lockfile: peroleh + lepas menghapus lockfile dan mencatat PID", async (t) => {
+  const dir = await tmpDir(t);
+  const lockPath = path.join(dir, "trace.jsonl.lock");
+  const lock = await acquireLock(lockPath);
+  assert.equal(lock.lockPath, lockPath);
+  const content = await fs.readFile(lockPath, "utf8");
+  assert.match(content, new RegExp(`pid=${process.pid}`));
+  await lock.release();
+  await assert.rejects(fs.access(lockPath));
+  await lock.release(); // lepas ganda aman
+  await assert.rejects(fs.access(lockPath));
+});
+
+test("lockfile: perolehan kedua menunggu sampai kunci dilepas", async (t) => {
+  const dir = await tmpDir(t);
+  const lockPath = path.join(dir, "trace.jsonl.lock");
+  const first = await acquireLock(lockPath);
+  const secondPromise = acquireLock(lockPath, { timeoutMs: 3000, retryMs: 20 });
+  await new Promise((r) => setTimeout(r, 200));
+  await first.release();
+  const second = await secondPromise;
+  await second.release();
+  await assert.rejects(fs.access(lockPath));
+});
+
+test("lockfile: kunci basi dicuri, kunci segar menolak tepat waktu", async (t) => {
+  const dir = await tmpDir(t);
+  const stalePath = path.join(dir, "basi.jsonl.lock");
+  await fs.writeFile(stalePath, "pid=99999\ntime=lama\n");
+  const old = new Date(Date.now() - 60_000);
+  await fs.utimes(stalePath, old, old);
+  const stolen = await acquireLock(stalePath, { staleMs: 10_000 });
+  await stolen.release();
+
+  const freshPath = path.join(dir, "segar.jsonl.lock");
+  await fs.writeFile(freshPath, "pid=99999\ntime=baru\n");
+  await assert.rejects(
+    acquireLock(freshPath, { timeoutMs: 200, retryMs: 20, staleMs: 10_000 }),
+    (err) => err instanceof LockAcquisitionError && err.lockPath === freshPath,
+  );
+  await fs.unlink(freshPath);
+});
+
+test("lockfile: lockPathFor menormalkan path relatif", () => {
+  const lockPath = lockPathFor("sub/../trace.jsonl");
+  assert.ok(path.isAbsolute(lockPath));
+  assert.ok(lockPath.endsWith("trace.jsonl.lock"));
+});
+
+test("annotate_trace lintas proses: 20 panggilan bersamaan, seq unik berurutan", async (t) => {
+  const dir = await tmpDir(t);
+  const copy = path.join(dir, "trace.jsonl");
+  await fs.copyFile(REAL_FIXTURE, copy);
+
+  await withClient(copy, async (clientA) => {
+    await withClient(copy, async (clientB) => {
+      const calls = [];
+      for (let i = 0; i < 10; i++) {
+        calls.push(callToolJson(clientA, "annotate_trace", { text: `A-${i}` }));
+        calls.push(callToolJson(clientB, "annotate_trace", { text: `B-${i}` }));
+      }
+      const results = await Promise.all(calls);
+      const seqs = results.map((r) => r.seq);
+      assert.equal(new Set(seqs).size, 20, "semua seq harus berbeda");
+      assert.deepEqual(
+        [...seqs].sort((a, b) => a - b),
+        Array.from({ length: 20 }, (_, i) => 42 + i),
+        "seq harus berurutan 42..61",
+      );
+    });
+  });
+
+  await assert.rejects(fs.access(`${copy}.lock`), "tidak boleh ada lockfile tersisa");
+  const lines = (await fs.readFile(copy, "utf8")).split("\n").filter((l) => l.trim() !== "");
+  assert.equal(lines.length, 61);
+  const allSeqs = lines.map((l) => JSON.parse(l).seq);
+  assert.equal(new Set(allSeqs).size, 61, "seluruh file harus bebas seq duplikat");
+});
+
+test("annotate_trace gagal rapi bila lockfile segar sudah ada", async (t) => {
+  const dir = await tmpDir(t);
+  const copy = path.join(dir, "trace.jsonl");
+  await fs.copyFile(REAL_FIXTURE, copy);
+  const lockPath = `${copy}.lock`;
+  await fs.writeFile(lockPath, "pid=99999\ntime=baru\n");
+
+  await withClient(copy, async (client) => {
+    const result = await client.callTool({
+      name: "annotate_trace",
+      arguments: { text: "tertahan kunci" },
+    });
+    assert.equal(result.isError, true);
+    const item = result.content.find((c) => c.type === "text");
+    assert.match(item.text, /dikunci/);
+  });
+  const lines = (await fs.readFile(copy, "utf8")).split("\n").filter((l) => l.trim() !== "");
+  assert.equal(lines.length, 41, "panggilan yang gagal tidak boleh menulis");
+
+  await fs.unlink(lockPath);
+  await withClient(copy, async (client) => {
+    const res = await callToolJson(client, "annotate_trace", { text: "sesudah kunci hilang" });
+    assert.equal(res.seq, 42);
   });
 });
