@@ -406,3 +406,259 @@ test("CLI --help keluar nol dan menyebut kedua tool", async () => {
   assert.match(stdout, /get_trace_summary/);
   assert.match(stdout, /annotate_trace/);
 });
+
+// ---------- F5: agregat agen ----------
+
+test("F5 get_trace_summary: field agent dari baris CDP + agen", async (t) => {
+  const dir = await tmpDir(t);
+  const tracePath = path.join(dir, "trace.jsonl");
+  // Baris agent.tool membawa argumen bernilai rahasia sintetis dan URL
+  // lengkap berparameter token — ringkasan tidak boleh memuat keduanya.
+  const secretArg = "SYNTHETIC-AGENT-ARG-SECRET-9z";
+  const secretToken = "SYNTHETIC-AGENT-TOKEN-5q";
+  const rows = [
+    {
+      ts: "2026-10-29T06:00:00.000Z",
+      mono_ms: 0,
+      seq: 1,
+      session: "f5-mcp",
+      lightpanda_version: "1.0.2",
+      type: "tracer.session_started",
+      data: {},
+    },
+    {
+      ts: "2026-10-29T06:00:00.050Z",
+      mono_ms: 50,
+      seq: 2,
+      session: "f5-mcp",
+      lightpanda_version: "1.0.2",
+      type: "Network.requestWillBeSent",
+      data: {
+        request: { url: "http://127.0.0.1:8772/ok.html", method: "GET" },
+      },
+    },
+    {
+      ts: "2026-10-29T06:00:00.100Z",
+      mono_ms: 100,
+      seq: 3,
+      session: "f5-mcp",
+      lightpanda_version: "1.0.2",
+      type: "agent.run",
+      data: { provider: "none", model: "" },
+    },
+    {
+      ts: "2026-10-29T06:00:00.110Z",
+      mono_ms: 110,
+      seq: 4,
+      session: "f5-mcp",
+      lightpanda_version: "1.0.2",
+      type: "agent.tool",
+      data: {
+        step: 1,
+        name: "goto",
+        ms: 4,
+        agent_t: 9,
+        error: false,
+        navigated: true,
+        result_bytes: 6,
+        args: { value: secretArg },
+        page: {
+          url: `http://127.0.0.1:8772/ok.html?token=${secretToken}&x=1`,
+          httpStatus: 200,
+          title: "F5 OK",
+        },
+      },
+    },
+    {
+      ts: "2026-10-29T06:00:00.120Z",
+      mono_ms: 120,
+      seq: 5,
+      session: "f5-mcp",
+      lightpanda_version: "1.0.2",
+      type: "agent.tool",
+      data: {
+        step: 2,
+        name: "extract",
+        ms: 0,
+        agent_t: 10,
+        error: false,
+        navigated: false,
+        result_bytes: 38,
+        page: { url: "http://127.0.0.1:8772/ok.html", httpStatus: 200, title: "F5 OK" },
+      },
+    },
+    {
+      ts: "2026-10-29T06:00:00.130Z",
+      mono_ms: 130,
+      seq: 6,
+      session: "f5-mcp",
+      lightpanda_version: "1.0.2",
+      type: "agent.tool",
+      data: {
+        step: 3,
+        name: "evaluate",
+        ms: 2,
+        agent_t: 11,
+        error: true,
+        navigated: false,
+        result_bytes: 342,
+        page: { url: "http://127.0.0.1:8772/missing.html", httpStatus: 404, title: "" },
+      },
+    },
+    {
+      ts: "2026-10-29T06:00:00.140Z",
+      mono_ms: 140,
+      seq: 7,
+      session: "f5-mcp",
+      lightpanda_version: "1.0.2",
+      type: "agent.unknown",
+      data: { agent_type: "model", agent_t: 12 },
+    },
+    {
+      ts: "2026-10-29T06:00:00.150Z",
+      mono_ms: 150,
+      seq: 8,
+      session: "f5-mcp",
+      lightpanda_version: "1.0.2",
+      type: "agent.end",
+      data: {
+        model_calls: 2,
+        tool_calls: 3,
+        tokens: { input: 10, cached: 2, cache_creation: 1, output: 5 },
+      },
+    },
+    {
+      ts: "2026-10-29T06:00:01.000Z",
+      mono_ms: 1000,
+      seq: 9,
+      session: "f5-mcp",
+      lightpanda_version: "1.0.2",
+      type: "tracer.session_ended",
+      data: { reason: "signal-SIGINT" },
+    },
+  ];
+  await fs.writeFile(tracePath, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+
+  await withClient(tracePath, async (client) => {
+    const summary = await callToolJson(client, "get_trace_summary", {});
+    assert.equal(summary.rows, 9);
+    assert.equal(summary.requests, 1);
+    assert.deepEqual(summary.agent, {
+      present: true,
+      toolCalls: 3,
+      errors: 1,
+      tools: { goto: 1, extract: 1, evaluate: 1 },
+      modelCalls: 2,
+      tokens: { input: 10, cached: 2, cache_creation: 1, output: 5 },
+      unknownLines: 1,
+    });
+    assert.equal(summary.eventsByType["agent.tool"], 3);
+    assert.equal(summary.eventsByType["agent.unknown"], 1);
+    // Host/path dari URL halaman agen tercatat tanpa query.
+    assert.ok(summary.hosts.includes("127.0.0.1:8772"));
+    assert.ok(summary.paths.includes("/ok.html"));
+    assert.ok(summary.paths.includes("/missing.html"));
+    // Tidak ada kebocoran: nilai argumen rahasia, token URL, URL lengkap.
+    const blob = JSON.stringify(summary);
+    assert.ok(!blob.includes(secretArg), "ringkasan memuat nilai argumen agen");
+    assert.ok(!blob.includes(secretToken), "ringkasan memuat token URL agen");
+    assert.ok(!blob.includes("token="), "ringkasan memuat parameter query");
+    assert.ok(!blob.includes("ok.html?token"), "ringkasan memuat URL lengkap");
+  });
+});
+
+test("F5 get_trace_summary dengan filter agent hanya mengembalikan baris agen", async (t) => {
+  const dir = await tmpDir(t);
+  const tracePath = path.join(dir, "trace.jsonl");
+  const rows = [
+    {
+      ts: "2026-10-29T06:00:00.000Z",
+      mono_ms: 0,
+      seq: 1,
+      session: "f5-filter",
+      lightpanda_version: "1.0.2",
+      type: "tracer.session_started",
+      data: {},
+    },
+    {
+      ts: "2026-10-29T06:00:00.050Z",
+      mono_ms: 50,
+      seq: 2,
+      session: "f5-filter",
+      lightpanda_version: "1.0.2",
+      type: "Network.requestWillBeSent",
+      data: { request: { url: "http://127.0.0.1:8772/ok.html" } },
+    },
+    {
+      ts: "2026-10-29T06:00:00.100Z",
+      mono_ms: 100,
+      seq: 3,
+      session: "f5-filter",
+      lightpanda_version: "1.0.2",
+      type: "agent.run",
+      data: { provider: "none", model: "" },
+    },
+    {
+      ts: "2026-10-29T06:00:00.110Z",
+      mono_ms: 110,
+      seq: 4,
+      session: "f5-filter",
+      lightpanda_version: "1.0.2",
+      type: "agent.tool",
+      data: {
+        step: 1,
+        name: "goto",
+        ms: 4,
+        agent_t: 9,
+        error: false,
+        navigated: true,
+        result_bytes: 6,
+        page: { url: "http://127.0.0.1:8772/ok.html", httpStatus: 200, title: "F5 OK" },
+      },
+    },
+    {
+      ts: "2026-10-29T06:00:00.120Z",
+      mono_ms: 120,
+      seq: 5,
+      session: "f5-filter",
+      lightpanda_version: "1.0.2",
+      type: "agent.end",
+      data: {
+        model_calls: 0,
+        tool_calls: 1,
+        tokens: { input: 0, cached: 0, cache_creation: 0, output: 0 },
+      },
+    },
+  ];
+  await fs.writeFile(tracePath, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+
+  await withClient(tracePath, async (client) => {
+    const agentOnly = await callToolJson(client, "get_trace_summary", { category: "agent" });
+    assert.equal(agentOnly.filter, "agent");
+    assert.equal(agentOnly.rows, 3);
+    assert.equal(agentOnly.agent.present, true);
+    assert.equal(agentOnly.agent.toolCalls, 1);
+    assert.equal(agentOnly.requests, 0);
+    assert.equal(agentOnly.pages, 0);
+    const networkOnly = await callToolJson(client, "get_trace_summary", { category: "network" });
+    assert.equal(networkOnly.rows, 1);
+    assert.equal(networkOnly.agent.present, false);
+    assert.equal(networkOnly.agent.toolCalls, 0);
+  });
+});
+
+test("F5 field agent nol pada trace tanpa baris agen", async () => {
+  await withClient(REAL_FIXTURE, async (client) => {
+    const summary = await callToolJson(client, "get_trace_summary", {});
+    assert.equal(summary.rows, 41);
+    assert.deepEqual(summary.agent, {
+      present: false,
+      toolCalls: 0,
+      errors: 0,
+      tools: {},
+      modelCalls: 0,
+      tokens: { input: 0, cached: 0, cache_creation: 0, output: 0 },
+      unknownLines: 0,
+    });
+  });
+});
