@@ -135,6 +135,8 @@ async function appendAnnotationInner(
     seq,
     session,
     lightpanda_version: lightpandaVersion,
+    endpoint: "",
+    endpoint_index: -1,
     type: "tracer.annotation",
     data: { text },
   };
