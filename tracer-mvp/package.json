@@ -5,6 +5,7 @@
   "description": "Tracer CDP eksternal untuk Lightpanda Browser: mencatat event CDP ke JSONL teredaksi (M1, sesuai Dokumen Perancangan v1.1)",
   "devDependencies": {
     "@types/node": "^22.20.5",
+    "playwright-core": "^1.64.1",
     "typescript": "^5.9.3"
   },
   "engines": {
@@ -23,11 +24,11 @@
     "bench": "node tests/benchmark.mjs",
     "build": "tsc",
     "start": "node dist/cli.js",
-    "test": "node tests/run-f5-tests.mjs && node tests/run-ms-tests.mjs && node tests/run-live-tests.mjs && node tests/run-error-tests.mjs && node tests/run-m1-tests.mjs",
+    "test": "node tests/run-robust-tests.mjs && node tests/run-version-tests.mjs && node tests/run-f5-tests.mjs && node tests/run-ms-tests.mjs && node tests/run-live-tests.mjs && node tests/run-error-tests.mjs && node tests/run-m1-tests.mjs",
     "prepublishOnly": "npm run build"
   },
   "type": "module",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "repository": {
     "type": "git",
     "url": "https://github.com/stokforplayy77/LP-Trace.git",
