@@ -87,9 +87,11 @@ best-effort).
    dan ditutup dengan uji regresi.
 5. **Panel Agen (F5).** Baris `agent.*` dari tracer ditampilkan pada
    kategori `agen` dengan panel langkah sendiri (nama tool, latensi,
-   penanda error, judul halaman). Baris agen yang direkam setelah trace
-   selesai mengelompok pada waktu ingest; penampil menandainya lewat
-   teks penjelasan di panel.
+   penanda error, judul halaman). Sejak tracer 0.1.8, waktu langkah
+   dijangkar pada mtime file trace agen (lihat `docs/ANCHOR-DESIGN.md`),
+   sehingga file yang sudah selesai sebelum tracer mulai tampil pada
+   waktu aslinya; detik ke-0 garis waktu adalah kejadian terawal
+   dalam file, bukan baris pertama urutan file.
 
 ## Redaksi dan privasi (Bab 3.6)
 
