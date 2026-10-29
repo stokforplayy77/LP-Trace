@@ -17,6 +17,10 @@ export interface TraceRow {
   lightpanda_version: unknown;
   type: string;
   data: unknown;
+  /** URL CDP koneksi asal baris; "" untuk baris bukan-CDP atau trace lama. */
+  endpoint: string;
+  /** Nomor urut koneksi; -1 untuk baris bukan-CDP atau trace lama. */
+  endpoint_index: number;
 }
 
 export interface TraceReadResult {
@@ -68,6 +72,9 @@ export async function readTraceFile(tracePath: string): Promise<TraceReadResult>
       lightpanda_version: rec["lightpanda_version"],
       type: rec["type"],
       data: rec["data"],
+      endpoint: typeof rec["endpoint"] === "string" ? rec["endpoint"] : "",
+      endpoint_index:
+        typeof rec["endpoint_index"] === "number" ? rec["endpoint_index"] : -1,
     });
   }
   return { exists: true, rows, skippedLines };
@@ -209,6 +216,17 @@ export interface AgentSummary {
   unknownLines: number;
 }
 
+/** Agregat per koneksi CDP (multi-endpoint). Baris bukan-CDP tidak masuk ke daftar ini. */
+export interface EndpointSummary {
+  endpoint: string;
+  endpoint_index: number;
+  /** Label: URL, ditambah #indeks bila URL yang sama dipakai beberapa koneksi. */
+  label: string;
+  rows: number;
+  requests: number;
+  errors: number;
+}
+
 export interface TraceSummary {
   /** true bila tidak ada baris yang diringkas (file kosong/tidak ada, atau filter tanpa hasil). */
   empty: boolean;
@@ -226,7 +244,7 @@ export interface TraceSummary {
   /** Jumlah Runtime.exceptionThrown + Network.loadingFailed. */
   errors: number;
   errorBreakdown: { exceptions: number; failedRequests: number };
-  /** Durasi milidetik dari mono_ms (atau selisih ts bila mono_ms tak tersedia). */
+  /** Durasi milidetik dari selisih ts (atau mono_ms bila ts tak tersedia). */
   durationMs: number | null;
   durationSource: "mono_ms" | "ts" | null;
   startedAt: string | null;
@@ -242,6 +260,10 @@ export interface TraceSummary {
   annotations: number;
   /** Agregat langkah agen (F5); nol bila tidak ada baris agent.*. */
   agent: AgentSummary;
+  /** Agregat per koneksi CDP (multi-endpoint); kosong untuk trace satu endpoint lama tanpa field endpoint. */
+  endpoints: EndpointSummary[];
+  /** true bila file memuat baris tracer.session_resumed (sesi dilanjutkan dengan --append). */
+  resumed: boolean;
   filter: SummaryCategory | null;
 }
 
@@ -292,9 +314,32 @@ export function computeSummary(
   let agentPresent = false;
   const agentTools: Record<string, number> = {};
   const agentTokens = { input: 0, cached: 0, cache_creation: 0, output: 0 };
+  const endpointAgg = new Map<
+    string,
+    { endpoint: string; endpoint_index: number; rows: number; requests: number; errors: number }
+  >();
+  let resumed = false;
 
   for (const row of rows) {
     eventsByType[row.type] = (eventsByType[row.type] ?? 0) + 1;
+    if (row.type === "tracer.session_resumed") {
+      resumed = true;
+    }
+    if (row.endpoint !== "") {
+      const key = `${row.endpoint_index}\n${row.endpoint}`;
+      let agg = endpointAgg.get(key);
+      if (agg === undefined) {
+        agg = { endpoint: row.endpoint, endpoint_index: row.endpoint_index, rows: 0, requests: 0, errors: 0 };
+        endpointAgg.set(key, agg);
+      }
+      agg.rows += 1;
+      if (row.type === "Network.requestWillBeSent") {
+        agg.requests += 1;
+      }
+      if (row.type === "Runtime.exceptionThrown" || row.type === "Network.loadingFailed") {
+        agg.errors += 1;
+      }
+    }
     if (row.type === "Network.requestWillBeSent") {
       requests += 1;
     }
@@ -360,24 +405,41 @@ export function computeSummary(
   let durationMs: number | null = null;
   let durationSource: "mono_ms" | "ts" | null = null;
   if (first !== null && last !== null) {
-    const firstMono = asNumber(first.mono_ms);
-    const lastMono = asNumber(last.mono_ms);
-    if (firstMono !== null && lastMono !== null) {
-      durationMs = Math.max(0, lastMono - firstMono);
-      durationSource = "mono_ms";
-    } else {
-      const firstTs = asString(first.ts);
-      const lastTs = asString(last.ts);
-      if (firstTs !== null && lastTs !== null) {
-        const start = Date.parse(firstTs);
-        const end = Date.parse(lastTs);
-        if (!Number.isNaN(start) && !Number.isNaN(end)) {
-          durationMs = Math.max(0, end - start);
-          durationSource = "ts";
-        }
+    // Durasi dari ts absolut dulu (benar lintas proses resume, karena
+    // mono_ms mulai dari 0 tiap proses tracer); fallback ke mono_ms.
+    const firstTs = asString(first.ts);
+    const lastTs = asString(last.ts);
+    if (firstTs !== null && lastTs !== null) {
+      const start = Date.parse(firstTs);
+      const end = Date.parse(lastTs);
+      if (!Number.isNaN(start) && !Number.isNaN(end)) {
+        durationMs = Math.max(0, end - start);
+        durationSource = "ts";
+      }
+    }
+    if (durationMs === null) {
+      const firstMono = asNumber(first.mono_ms);
+      const lastMono = asNumber(last.mono_ms);
+      if (firstMono !== null && lastMono !== null) {
+        durationMs = Math.max(0, lastMono - firstMono);
+        durationSource = "mono_ms";
       }
     }
   }
+
+  const endpointIndexCount = new Map<string, number>();
+  for (const agg of endpointAgg.values()) {
+    endpointIndexCount.set(agg.endpoint, (endpointIndexCount.get(agg.endpoint) ?? 0) + 1);
+  }
+  const endpoints: EndpointSummary[] = [...endpointAgg.values()]
+    .map((agg) => ({
+      ...agg,
+      label:
+        (endpointIndexCount.get(agg.endpoint) ?? 0) > 1
+          ? `${agg.endpoint} #${agg.endpoint_index}`
+          : agg.endpoint,
+    }))
+    .sort((a, b) => a.endpoint_index - b.endpoint_index);
 
   return {
     empty: rows.length === 0,
@@ -410,6 +472,8 @@ export function computeSummary(
       tokens: agentTokens,
       unknownLines: agentUnknownLines,
     },
+    endpoints,
+    resumed,
     filter,
   };
 }
