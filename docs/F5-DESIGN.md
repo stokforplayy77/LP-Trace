@@ -84,6 +84,16 @@ Konsekuensi yang dinyatakan jujur:
   ingest, BUKAN pada waktu kejadian aslinya. Urutan langkah tetap
   benar, penempatan absolutnya perkiraan. Perbaikan jangkar
   (mtime file) dicatat sebagai pekerjaan lanjutan, bukan bagian F5.
+
+  **Amandemen 0.1.8 (30 Oktober 2026): pekerjaan lanjutan itu SUDAH
+  dikerjakan.** Baris agen kini dijangkar pada mtime file per batch
+  (lihat `docs/ANCHOR-DESIGN.md`): baris terakhir batch mendarat pada
+  mtime, baris sebelumnya tersebar mundur sesuai selisih `t`-nya,
+  sehingga file agen yang sudah selesai sebelum tracer mulai tampil
+  pada waktu aslinya. Bila batch tidak dapat dijangkar (urutan `t`
+  menurun), baris memakai waktu baca seperti F5 lama. `mono_ms`
+  baris berjangkar dibatasi bawah 0 (sesi agen yang mendahului
+  tracer tidak dapat diwakili jam relatif tracer).
 - `agent_t` (nilai `t` upstream) selalu dipertahankan di `data`,
   sehingga urutan dan jarak relatif antar langkah agen tetap dapat
   dihitung dari file trace itu sendiri.
@@ -167,7 +177,8 @@ CDP, sehingga satu file trace memuat kedua sisi dalam satu sesi.
 
 ## 3. Yang TIDAK dilakukan F5
 
-- Jangkar mtime untuk korelasi pasca-hoc yang presisi.
+- Jangkar mtime untuk korelasi pasca-hoc yang presisi (dikerjakan
+  terpisah pada 0.1.8, lihat amandemen §2 dan `docs/ANCHOR-DESIGN.md`).
 - Menjalankan agen dari dalam tracer (agen tetap proses terpisah yang
   dijalankan pengguna; tracer hanya membaca file-nya).
 - Bentuk baris panggilan model: belum terverifikasi, ditangani sebagai
