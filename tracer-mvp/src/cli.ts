@@ -32,17 +32,24 @@ OPSI
                        Tanpa flag ini tracer bersifat pasif.
   --wait-ms <n>        Jeda antar navigasi --navigate (default 1500 ms).
   --stay               Setelah navigasi selesai, tetap berjalan sampai sinyal.
+  --agent-trace <file> Baca (tail) file trace agent --trace upstream
+                       selama sesi dan tulis langkah agen sebagai baris
+                       agent.* pada sumbu waktu yang sama (F5). File boleh
+                       belum ada saat tracer mulai.
   --help               Tampilkan bantuan ini.
   --version            Tampilkan versi.
 
 CONTOH
   lp-tracer --cdp ws://127.0.0.1:9222 --output ./trace.jsonl --session "my-agent-run-001"
   lp-tracer --cdp ws://127.0.0.1:9222 --output ./trace.jsonl --navigate http://127.0.0.1:8765/ok.html
+  lp-tracer --cdp ws://127.0.0.1:9222 --output ./trace.jsonl --agent-trace ./agent-trace.jsonl --stay
 
 CATATAN
   Tracer melakukan handshake Target (Bab 3.3) dan mencatat event CDP yang
   sudah diredaksi (Bab 3.6): header sensitif disensor, body tidak direkam
   secara default, argumen konsol dipotong. Domain Log tidak dipakai di MVP.
+  Baris agen (F5) diredaksi dengan aturan yang sama: argumen dipotong,
+  hasil tool tidak ditulis kecuali --include-bodies.
 `;
 
 function fail(message: string): never {
@@ -60,6 +67,7 @@ interface ParsedArgs {
   navigateUrls: string[];
   waitMs: number;
   stay: boolean;
+  agentTrace: string | null;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -72,6 +80,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     navigateUrls: [],
     waitMs: DEFAULT_WAIT_MS,
     stay: false,
+    agentTrace: null,
   };
   const takeValue = (flag: string, i: number): string => {
     const v = argv[i + 1];
@@ -127,6 +136,9 @@ function parseArgs(argv: string[]): ParsedArgs {
       case "--stay":
         args.stay = true;
         break;
+      case "--agent-trace":
+        args.agentTrace = takeValue(a, i++);
+        break;
       default:
         fail(`argumen tidak dikenal: ${a}.`);
     }
@@ -157,6 +169,7 @@ async function main(): Promise<void> {
     navigateUrls: args.navigateUrls,
     waitMs: args.waitMs,
     stay: args.stay,
+    agentTrace: args.agentTrace,
   });
   if (outcome.limitReached) {
     console.error(
