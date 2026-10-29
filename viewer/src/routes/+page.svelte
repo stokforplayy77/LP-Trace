@@ -11,6 +11,7 @@
 		formatSeconds,
 		groupWaterfall,
 		hasResumedMarker,
+		parseLiveEvent,
 		parseTrace,
 		relativeSeconds,
 		shortEndpointLabel,
@@ -18,14 +19,27 @@
 		toCSV,
 		toHAR,
 		type Category,
-		type ParsedTrace
+		type ParsedTrace,
+		type TraceRow
 	} from '../lib/trace';
+	import { onDestroy } from 'svelte';
 
 	let parsed = $state<ParsedTrace | null>(null);
 	let fileName = $state('');
 	let loadError = $state('');
 	let query = $state('');
 	let loadingSample = $state(false);
+
+	// Mode live (SSE dari tracer --live-port): baris live menggantikan
+	// baris file selama tersambung; seluruh tampilan turunan memakai
+	// `rows` yang sama.
+	let liveUrl = $state('http://127.0.0.1:9229/events');
+	let liveStatus = $state('putus');
+	let liveConnected = $state(false);
+	let livePaused = $state(false);
+	let liveRows = $state<TraceRow[]>([]);
+	let liveSkipped = $state(0);
+	let eventSource: EventSource | null = null;
 
 	const ALL_CATEGORIES: Category[] = ['navigasi', 'network', 'konsol', 'error', 'tracer', 'agen', 'lainnya'];
 	let selectedCategories = $state(new Set<Category>());
@@ -53,8 +67,8 @@
 
 	const LEVEL_OPTIONS = ['log', 'warning', 'error', 'exception'];
 
-	const rows = $derived(parsed?.rows ?? []);
-	const skipped = $derived(parsed?.skipped ?? 0);
+	const rows = $derived(liveConnected ? liveRows : (parsed?.rows ?? []));
+	const skipped = $derived(liveConnected ? liveSkipped : (parsed?.skipped ?? 0));
 	const durationMs = $derived(calcDurationMs(rows));
 	const endpointList = $derived(endpointsOf(rows));
 	const duplicatedEndpointUrls = $derived(
@@ -104,6 +118,7 @@
 		parsed = result;
 		fileName = name;
 		loadError = '';
+		disconnectLive();
 		selectedEndpoints.clear();
 	}
 
@@ -162,6 +177,41 @@
 		);
 	}
 
+	function disconnectLive() {
+		if (eventSource) {
+			eventSource.close();
+			eventSource = null;
+		}
+		liveConnected = false;
+		liveStatus = 'putus';
+	}
+
+	function connectLive() {
+		disconnectLive();
+		liveRows = [];
+		liveSkipped = 0;
+		livePaused = false;
+		selectedEndpoints.clear();
+		liveStatus = 'menyambung…';
+		const es = new EventSource(liveUrl);
+		eventSource = es;
+		es.onopen = () => {
+			liveConnected = true;
+			liveStatus = 'tersambung';
+		};
+		es.onmessage = (ev: MessageEvent) => {
+			if (livePaused) return;
+			const row = parseLiveEvent(String(ev.data));
+			if (row === null) liveSkipped++;
+			else liveRows.push(row);
+		};
+		es.onerror = () => {
+			liveStatus = 'error — mencoba ulang otomatis (atau tekan Putus lalu Sambung)';
+		};
+	}
+
+	onDestroy(disconnectLive);
+
 	function toggleEndpoint(key: string) {
 		if (selectedEndpoints.has(key)) selectedEndpoints.delete(key);
 		else selectedEndpoints.add(key);
@@ -196,7 +246,27 @@
 		{#if loadError}<p class="error" role="alert">{loadError}</p>{/if}
 	</section>
 
-	{#if parsed}
+	<section class="loader" aria-label="Mode live">
+		<label>
+			URL SSE live
+			<input type="url" bind:value={liveUrl} placeholder="http://127.0.0.1:9229/events" />
+		</label>
+		{#if !liveConnected}
+			<button type="button" onclick={connectLive}>Sambung live</button>
+		{:else}
+			<button type="button" onclick={disconnectLive}>Putus</button>
+			<button type="button" onclick={() => (livePaused = !livePaused)}>
+				{livePaused ? 'Lanjut' : 'Jeda'}
+			</button>
+		{/if}
+		<span class="file-name">Status: {liveStatus} · {liveRows.length} baris live{liveSkipped ? ` · ${liveSkipped} dilewati` : ''}{livePaused ? ' · dijeda' : ''}</span>
+		<p class="hint">
+			Jalankan tracer dengan <code>--live-port 9229</code>; baris live menggantikan
+			tampilan file selama tersambung. Memuat file memutuskan sambungan live.
+		</p>
+	</section>
+
+	{#if parsed || liveConnected}
 		<section class="meta" aria-label="Metadata sesi">
 			<div><span>Sesi</span><strong>{rows[0]?.session || '—'}</strong></div>
 			<div><span>Versi Lightpanda</span><strong>{rows[0]?.lightpanda_version || '—'}</strong></div>
