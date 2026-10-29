@@ -328,9 +328,29 @@ export function computeSummary(
   >();
   let resumed = false;
   let sessionError: SessionErrorSummary | null = null;
+  // Rentang waktu min/maks atas seluruh baris (bukan baris pertama /
+  // terakhir urutan file): baris agen berjangkar mtime dapat mendahului
+  // session_started dalam urutan file. Untuk file normal hasilnya sama.
+  let minTs: number | null = null;
+  let maxTs: number | null = null;
+  let minMono: number | null = null;
+  let maxMono: number | null = null;
 
   for (const row of rows) {
     eventsByType[row.type] = (eventsByType[row.type] ?? 0) + 1;
+    const rowTs = asString(row.ts);
+    if (rowTs !== null) {
+      const parsedTs = Date.parse(rowTs);
+      if (!Number.isNaN(parsedTs)) {
+        if (minTs === null || parsedTs < minTs) minTs = parsedTs;
+        if (maxTs === null || parsedTs > maxTs) maxTs = parsedTs;
+      }
+    }
+    const rowMono = asNumber(row.mono_ms);
+    if (rowMono !== null) {
+      if (minMono === null || rowMono < minMono) minMono = rowMono;
+      if (maxMono === null || rowMono > maxMono) maxMono = rowMono;
+    }
     if (row.type === "tracer.session_resumed") {
       resumed = true;
     }
@@ -422,27 +442,15 @@ export function computeSummary(
 
   let durationMs: number | null = null;
   let durationSource: "mono_ms" | "ts" | null = null;
-  if (first !== null && last !== null) {
-    // Durasi dari ts absolut dulu (benar lintas proses resume, karena
-    // mono_ms mulai dari 0 tiap proses tracer); fallback ke mono_ms.
-    const firstTs = asString(first.ts);
-    const lastTs = asString(last.ts);
-    if (firstTs !== null && lastTs !== null) {
-      const start = Date.parse(firstTs);
-      const end = Date.parse(lastTs);
-      if (!Number.isNaN(start) && !Number.isNaN(end)) {
-        durationMs = Math.max(0, end - start);
-        durationSource = "ts";
-      }
-    }
-    if (durationMs === null) {
-      const firstMono = asNumber(first.mono_ms);
-      const lastMono = asNumber(last.mono_ms);
-      if (firstMono !== null && lastMono !== null) {
-        durationMs = Math.max(0, lastMono - firstMono);
-        durationSource = "mono_ms";
-      }
-    }
+  if (minTs !== null && maxTs !== null) {
+    // Durasi dari ts absolut min/maks (benar lintas proses resume,
+    // karena mono_ms mulai dari 0 tiap proses tracer, dan benar untuk
+    // baris agen berjangkar yang mendahului sesi); fallback ke mono_ms.
+    durationMs = Math.max(0, maxTs - minTs);
+    durationSource = "ts";
+  } else if (minMono !== null && maxMono !== null) {
+    durationMs = Math.max(0, maxMono - minMono);
+    durationSource = "mono_ms";
   }
 
   const endpointIndexCount = new Map<string, number>();
@@ -474,8 +482,8 @@ export function computeSummary(
     errorBreakdown: { exceptions, failedRequests },
     durationMs,
     durationSource,
-    startedAt: first !== null ? asString(first.ts) : null,
-    endedAt: last !== null ? asString(last.ts) : null,
+    startedAt: minTs !== null ? new Date(minTs).toISOString() : first !== null ? asString(first.ts) : null,
+    endedAt: maxTs !== null ? new Date(maxTs).toISOString() : last !== null ? asString(last.ts) : null,
     eventsByType,
     consoleByLevel,
     hosts: [...hosts].sort(),
