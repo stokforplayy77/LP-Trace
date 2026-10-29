@@ -1,0 +1,5 @@
+{"type":"run","t":0,"provider":"none","model":""}
+{"type":"tool","t":9,"step":1,"name":"goto","ms":4,"result_bytes":6,"error":false,"navigated":true,"page":{"url":"http://127.0.0.1:8765/ok.html","httpStatus":200,"title":"F5 OK"}}
+{"type":"tool","t":10,"step":2,"name":"extract","args":{"schema":"{\"title\":\"title\",\"heading\":\"h1\"}"},"ms":0,"result_bytes":38,"error":false,"navigated":false,"page":{"url":"http://127.0.0.1:8765/ok.html","httpStatus":200,"title":"F5 OK"}}
+{"type":"tool","t":11,"step":3,"name":"evaluate","args":{"script":"document.title"},"ms":1,"result_bytes":5,"error":false,"navigated":false,"page":{"url":"http://127.0.0.1:8765/ok.html","httpStatus":200,"title":"F5 OK"}}
+{"type":"end","t":11,"model_calls":0,"tool_calls":3,"tokens":{"input":0,"cached":0,"cache_creation":0,"output":0}}
