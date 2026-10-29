@@ -6,6 +6,7 @@
 // sampai sinyal tiba). Lihat README bagian "Perbedaan dari spesifikasi".
 
 import { runTracer } from "./tracer.js";
+import { runReplay } from "./replay.js";
 
 const VERSION = "0.1.0";
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
@@ -47,6 +48,14 @@ OPSI
                        selama sesi dan tulis langkah agen sebagai baris
                        agent.* pada sumbu waktu yang sama (F5). File boleh
                        belum ada saat tracer mulai.
+  --live-port <n>      Sajikan baris trace secara live lewat SSE di
+                       127.0.0.1:<n> (GET /events, GET /health). Tanpa
+                       flag ini tidak ada server.
+  --replay <file>      Mode replay: jalankan ulang navigasi tingkat atas
+                       dari file trace ini (tepat satu --cdp; menolak
+                       --navigate dan --agent-trace) dan bandingkan
+                       bentuk jaringannya. Laporan JSON ke stdout.
+  --replay-report <f>  Tulis laporan JSON replay ke file ini juga.
   --help               Tampilkan bantuan ini.
   --version            Tampilkan versi.
 
@@ -55,6 +64,8 @@ CONTOH
   lp-tracer --cdp ws://127.0.0.1:9222 --output ./trace.jsonl --navigate http://127.0.0.1:8765/ok.html
   lp-tracer --cdp ws://127.0.0.1:9222 --cdp ws://127.0.0.1:9222 --output ./trace.jsonl --navigate http://127.0.0.1:8765/a.html --navigate http://127.0.0.1:8765/b.html --stay
   lp-tracer --cdp ws://127.0.0.1:9222 --output ./trace.jsonl --append --stay
+  lp-tracer --cdp ws://127.0.0.1:9222 --output ./trace.jsonl --live-port 9229 --stay
+  lp-tracer --cdp ws://127.0.0.1:9222 --output ./trace-replay.jsonl --replay ./trace.jsonl --wait-ms 500
 
 CATATAN
   Tracer melakukan handshake Target (Bab 3.3) dan mencatat event CDP yang
@@ -81,6 +92,9 @@ interface ParsedArgs {
   stay: boolean;
   agentTrace: string | null;
   append: boolean;
+  livePort: number | null;
+  replay: string | null;
+  replayReport: string | null;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -95,6 +109,9 @@ function parseArgs(argv: string[]): ParsedArgs {
     stay: false,
     agentTrace: null,
     append: false,
+    livePort: null,
+    replay: null,
+    replayReport: null,
   };
   const takeValue = (flag: string, i: number): string => {
     const v = argv[i + 1];
@@ -156,6 +173,21 @@ function parseArgs(argv: string[]): ParsedArgs {
       case "--agent-trace":
         args.agentTrace = takeValue(a, i++);
         break;
+      case "--live-port": {
+        const raw = takeValue(a, i++);
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < 1 || n > 65535) {
+          fail(`--live-port harus bilangan bulat 1-65535, diterima: ${raw}.`);
+        }
+        args.livePort = n;
+        break;
+      }
+      case "--replay":
+        args.replay = takeValue(a, i++);
+        break;
+      case "--replay-report":
+        args.replayReport = takeValue(a, i++);
+        break;
       default:
         fail(`argumen tidak dikenal: ${a}.`);
     }
@@ -177,11 +209,58 @@ async function main(): Promise<void> {
       fail(`--cdp harus URL WebSocket (ws:// atau wss://), diterima: ${cdpUrl}.`);
     }
   }
+  if (args.replay !== null) {
+    if (args.cdpUrls.length !== 1) {
+      fail("--replay membutuhkan tepat satu --cdp.");
+    }
+    if (args.navigateUrls.length > 0) {
+      fail("--replay menolak --navigate: navigasi digerakkan dari file trace yang di-replay.");
+    }
+    if (args.agentTrace !== null) {
+      fail("--replay menolak --agent-trace.");
+    }
+  }
   if (args.includeBodies) {
     console.error(
       "PERINGATAN: --include-bodies aktif — isi body permintaan (postData) akan direkam ke file trace. " +
         "Jangan bagikan file trace yang dihasilkan tanpa memeriksa isinya. Body respons tetap tidak diambil.",
     );
+  }
+  if (args.replay !== null) {
+    try {
+      const replayed = await runReplay({
+        cdpUrl: args.cdpUrls[0] as string,
+        replayPath: args.replay as string,
+        output: args.output as string,
+        session: args.session,
+        includeBodies: args.includeBodies,
+        maxBytes: args.maxBytes,
+        waitMs: args.waitMs,
+        append: args.append,
+        livePort: args.livePort,
+        reportPath: args.replayReport,
+      });
+      if (replayed.report !== null) {
+        console.log(JSON.stringify(replayed.report, null, 2));
+        const r = replayed.report;
+        console.error(
+          `lp-tracer: replay ${r.match ? "COCOK" : "TIDAK COCOK"} — ${r.steps.length} langkah, ` +
+            `request asli ${r.original.requests}, replay ${r.replay.requests}.`,
+        );
+        for (const s of r.steps) {
+          if (!s.match) {
+            console.error(
+              `lp-tracer: langkah ${s.index} ${s.url}: asli ${s.originalRequests} request, replay ${s.replayRequests} request.`,
+            );
+          }
+        }
+      }
+      process.exit(replayed.exitCode);
+    } catch (e) {
+      console.error(`lp-tracer: ${e instanceof Error ? e.message : String(e)}`);
+      process.exitCode = 1;
+      return;
+    }
   }
   let outcome: Awaited<ReturnType<typeof runTracer>>;
   try {
@@ -196,6 +275,7 @@ async function main(): Promise<void> {
       stay: args.stay,
       agentTrace: args.agentTrace,
       append: args.append,
+      livePort: args.livePort,
     });
   } catch (e) {
     // Kegagalan sebelum sesi dimulai (mis. validasi resume): pesan rapi, keluar 1.
