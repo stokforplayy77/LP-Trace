@@ -89,6 +89,7 @@ docker run --rm -v "$PWD/traces:/traces" lp-trace-tracer \
 | `--include-bodies` | Rekam `postData` permintaan, disertai peringatan. Body respons tidak pernah diambil (tracer tidak memanggil `Network.getResponseBody`). |
 | `--max-bytes <n>` | Batas ukuran file (default 50 MB, minimum 4096). Bila tercapai, penulisan berhenti; data lama tidak ditimpa; cadangan 1024 byte disimpan untuk `session_ended`. |
 | `--navigate <url>` | Navigasikan target tracer ke URL (dapat diulang). Tambahan di luar Bab 4.1, lihat "Perbedaan dari spesifikasi". |
+| `--agent-trace <file>` | Baca (tail) file trace `agent --trace` upstream selama sesi; langkah agen ditulis sebagai baris `agent.*` pada sumbu waktu yang sama (F5, lihat "Hubungan dengan `agent --trace` bawaan"). File boleh belum ada saat tracer mulai. |
 | `--wait-ms <n>` | Jeda antar navigasi (default 1500 ms). |
 | `--stay` | Tetap berjalan setelah navigasi selesai. |
 | `--help`, `--version` | Bantuan / versi. |
@@ -190,14 +191,29 @@ Lihat [`M1-HASIL.md`](M1-HASIL.md).
    (`reason: "handshake-failed"`), agar file trace selalu lengkap.
 5. **`--max-bytes` minimum 4096**, agar cadangan untuk `session_ended`
    selalu tersedia.
+6. **Statistik agen di `session_ended`.** Bila `--agent-trace` dipakai,
+   baris `tracer.session_ended` membawa `agentLines`, `agentSkipped`,
+   dan `agentResets` (jumlah baris agen yang ditulis/dilewati/reset
+   file selama sesi).
 
 ## Hubungan dengan `agent --trace` bawaan
 
 Sejak Lightpanda 1.0.1, mode `agent` bawaan punya flag `--trace` yang
 mencatat langkah agent. Tracer ini berbeda: sumber datanya event CDP
 untuk sesi CDP apa pun, ditambah (di M2/M3) penampil dan ringkasan MCP.
-Keduanya saling melengkapi; F5 (iterasi berikutnya) memakai file
-`--trace` sebagai korelasi.
+
+F5 (selesai, lihat `../docs/F5-DESIGN.md`) mengorelasikan keduanya:
+flag `--agent-trace` membuat tracer membaca (tail) file `--trace`
+tersebut selama sesi dan menulis tiap langkah sebagai baris `agent.*`
+(`agent.tool`, `agent.run`, `agent.end`) dengan stempel waktu tracer,
+sehingga langkah agen tampil berdampingan dengan event CDP yang
+dipicunya. Redaksi Bab 3.6 berlaku sama untuk baris agen: argumen
+dipotong dan kunci mirip rahasia disensor, hasil tool tidak ditulis
+kecuali `--include-bodies`, dan tipe baris upstream yang belum dikenal
+(mis. panggilan model — bentuknya belum terverifikasi karena probe
+berjalan tanpa LLM) ditulis sebagai `agent.unknown` tanpa payload.
+Korelasi akurat bila tracer berjalan bersamaan dengan agen; atas file
+yang sudah selesai, penempatan waktunya perkiraan.
 
 ## Lisensi
 
