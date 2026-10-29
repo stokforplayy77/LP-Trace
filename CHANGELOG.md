@@ -5,8 +5,21 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-29
+
 ### Fixed
 
+- Redaksi rahasia bersarang pada argumen agen (`--agent-trace`):
+  nilai pada kunci mirip rahasia (`token`, `key`, `secret`,
+  `password`, `auth`) kini diganti `[REDACTED]` utuh pada kedalaman
+  berapa pun (objek dan array bersarang) dan untuk tipe nilai apa pun.
+  Sebelumnya aturan ini hanya berlaku untuk kunci tingkat atas yang
+  bernilai string, sehingga mis. `args.config.api_key` atau nilai
+  objek/array di bawah kunci mirip rahasia tertulis apa adanya di file
+  trace. Struktur lebih dalam dari 32 tingkat disensor utuh sebagai
+  pengamanan. Perilaku lain tidak berubah: header sensitif dan
+  parameter URL bersarang tetap disensor oleh aturan generik, nilai
+  biasa dipertahankan dan dipotong 500 karakter.
 - Perbaikan harness uji ketahanan (hanya pengujian, kode produk tidak
   berubah): `run-robust-tests.mjs` kini menjalankan build `tsc` dulu
   seperti rangkaian uji lainnya. Sebelumnya rangkaian ini mengasumsikan
