@@ -35,7 +35,9 @@ jobs:
           LP_BIN: ${{ github.workspace }}/tracer-mvp/vendor/lightpanda
         run: |
           npm ci
-          ./scripts/download-lightpanda.sh
+          # Dipanggil lewat bash: push via Contents API tidak membawa bit +x,
+          # jadi ./scripts/... akan Permission denied di checkout CI.
+          bash ./scripts/download-lightpanda.sh
           npm test
 
       - name: Uji penampil (M2)
