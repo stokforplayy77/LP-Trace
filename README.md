@@ -47,10 +47,10 @@ redaksi, ada di [docs/dokumen-perancangan-v1.1.md](docs/dokumen-perancangan-v1.1
   live membuktikan langkah agen (goto/extract/evaluate) tercatat
   sebagai baris `agent.*` di antara event CDP. Bentuk baris panggilan
   model belum terverifikasi (tidak ada LLM pada probe) dan ditangani
-  sebagai `agent.unknown` tanpa payload. Korelasi pasca-hoc atas file
-  trace agen yang sudah selesai bersifat perkiraan (langkah
-  mengelompok pada waktu ingest); korelasi waktu yang akurat butuh
-  tracer berjalan bersamaan dengan agen.
+  sebagai `agent.unknown` tanpa payload. Sejak 0.1.8, korelasi
+  pasca-hoc atas file trace agen yang sudah selesai dijangkar pada
+  mtime file (lihat `docs/ANCHOR-DESIGN.md`), sehingga langkah tampil
+  pada waktu aslinya.
 - Belum diuji / tidak diklaim: pembukaan penampil lewat
   `file://`, dan integrasi dengan aplikasi klien MCP tertentu.
   Koeksistensi Playwright terverifikasi (ROBUST): `connectOverCDP`
