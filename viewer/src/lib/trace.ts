@@ -547,24 +547,48 @@ export function toHAR(rows: TraceRow[], entries: WaterfallEntry[]): Record<strin
 /** Waktu relatif dalam detik terhadap baris pertama, 3 desimal.
  * Dihitung dari `ts` absolut (benar lintas proses resume, karena mono_ms
  * mulai dari 0 tiap proses tracer); fallback ke mono_ms bila ts tak ter-parse. */
+/**
+ * Detik relatif baris terhadap `ts` TERAWAL dalam file (bukan baris
+ * pertama urutan file): baris agen berjangkar mtime dapat mendahului
+ * `session_started` dalam urutan file, dan detik ke-0 harus menjadi
+ * kejadian terawal. Untuk file normal (ts tak menurun) hasilnya sama
+ * dengan baris pertama. Fallback ke `mono_ms` minimum bila tidak ada
+ * `ts` yang dapat diparse.
+ */
 export function relativeSeconds(rows: TraceRow[], row: TraceRow): number {
 	if (rows.length === 0) return 0;
-	const first = rows[0];
-	const t0 = Date.parse(first.ts);
+	let t0 = Number.POSITIVE_INFINITY;
+	let m0 = Number.POSITIVE_INFINITY;
+	for (const r of rows) {
+		const t = Date.parse(r.ts);
+		if (!Number.isNaN(t) && t < t0) t0 = t;
+		if (r.mono_ms < m0) m0 = r.mono_ms;
+	}
 	const t1 = Date.parse(row.ts);
-	if (!Number.isNaN(t0) && !Number.isNaN(t1)) return (t1 - t0) / 1000;
-	return (row.mono_ms - first.mono_ms) / 1000;
+	if (t0 !== Number.POSITIVE_INFINITY && !Number.isNaN(t1)) return (t1 - t0) / 1000;
+	return (row.mono_ms - (m0 === Number.POSITIVE_INFINITY ? 0 : m0)) / 1000;
 }
 
-/** Durasi total trace dalam ms, dari ts pertama–terakhir (fallback mono_ms). */
+/** Durasi total trace dalam ms, dari ts terawal–terakhir (fallback mono_ms min–maks). */
 export function durationMs(rows: TraceRow[]): number {
 	if (rows.length < 2) return 0;
-	const first = rows[0];
-	const last = rows[rows.length - 1];
-	const t0 = Date.parse(first.ts);
-	const t1 = Date.parse(last.ts);
-	if (!Number.isNaN(t0) && !Number.isNaN(t1)) return Math.max(0, t1 - t0);
-	return Math.max(0, last.mono_ms - first.mono_ms);
+	let tMin = Number.POSITIVE_INFINITY;
+	let tMax = Number.NEGATIVE_INFINITY;
+	let mMin = Number.POSITIVE_INFINITY;
+	let mMax = Number.NEGATIVE_INFINITY;
+	for (const r of rows) {
+		const t = Date.parse(r.ts);
+		if (!Number.isNaN(t)) {
+			if (t < tMin) tMin = t;
+			if (t > tMax) tMax = t;
+		}
+		if (r.mono_ms < mMin) mMin = r.mono_ms;
+		if (r.mono_ms > mMax) mMax = r.mono_ms;
+	}
+	if (tMin !== Number.POSITIVE_INFINITY && tMax !== Number.NEGATIVE_INFINITY) {
+		return Math.max(0, tMax - tMin);
+	}
+	return Math.max(0, mMax - mMin);
 }
 
 export function formatSeconds(value: number): string {
