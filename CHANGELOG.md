@@ -5,6 +5,21 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-10-29
+
+### Added
+
+- Mode bertahan multi-koneksi (`--survive`, opt-in): bila satu
+  koneksi CDP ditutup server, sesi berlanjut dengan koneksi lain
+  yang masih hidup; penutupan dicatat sebagai baris
+  `tracer.connection_closed` (`endpoint`, `endpoint_index`,
+  `remaining`), dan `session_ended` membawa `closedEndpoints`
+  untuk koneksi yang menutup lebih dulu. Tanpa flag ini perilaku
+  tidak berubah: penutupan koneksi mana pun mengakhiri sesi
+  (`cdp-closed`). Tidak ada reconnect otomatis; penutupan selama
+  handshake tetap fatal. Penampil dan sidecar tidak berubah
+  (baris penanda masuk kategori `tracer.*` yang sudah ada).
+
 ## [0.1.5] - 2026-10-29
 
 ### Fixed
