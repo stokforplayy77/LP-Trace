@@ -16,8 +16,10 @@ hitungan per level konsol, nama host, dan path tanpa query, ditambah
 field `agent` (F5): `{ present, toolCalls, errors, tools, modelCalls,
 tokens, unknownLines }` — agregat langkah agen saja, tanpa argumen,
 hasil, atau URL lengkap — ditambah field `endpoints` (MS): agregat per
-koneksi CDP `{ endpoint, endpoint_index, label, rows, requests, errors }`
-dan flag `resumed` (true bila file memuat `tracer.session_resumed`).
+koneksi CDP `{ endpoint, endpoint_index, label, rows, requests, errors }`,
+flag `resumed` (true bila file memuat `tracer.session_resumed`), dan
+field `sessionError` (ROBUST): `{ code, message }` dari
+`tracer.session_ended` terakhir, atau `null` bila sesi berakhir bersih.
 
 `get_trace_summary` membaca ulang file trace pada setiap pemanggilan,
 sehingga ringkasannya sudah mengikuti file yang sedang ditulis tracer
