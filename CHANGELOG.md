@@ -7,6 +7,19 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
 
 ### Added
 
+- F5 — korelasi dengan file trace `agent --trace` upstream
+  (lihat `docs/F5-DESIGN.md`): flag `--agent-trace` pada `lp-tracer`
+  membaca (tail) file trace agen selama sesi dan menulis langkah agen
+  sebagai baris `agent.*` pada sumbu waktu tracer yang sama, dengan
+  redaksi Bab 3.6 yang sama (argumen dipotong, hasil tool tidak
+  ditulis kecuali `--include-bodies`, tipe baris tak dikenal tidak
+  membawa payload). Format trace agen diverifikasi dari run sungguhan
+  Lightpanda 1.0.2 tanpa LLM; bentuk baris panggilan model belum
+  terverifikasi dan ditangani sebagai `agent.unknown`. Penampil
+  mendapat kategori `agen` + Panel Agen; `get_trace_summary` mendapat
+  filter kategori `agent` dan field agregat `agent`. Uji live
+  membuktikan korelasi ujung-ke-ujung (tracer + run skrip agen
+  bersamaan); overhead benchmark tetap di bawah gerbang 5%.
 - CI GitHub Actions (`.github/workflows/ci.yml`): uji tracer (M1, dengan
   Lightpanda 1.0.2 asli), penampil (M2, termasuk `svelte-check` dan
   build), dan sidecar MCP (M3) pada Node.js 22 dan 24, ditambah build
