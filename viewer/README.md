@@ -17,6 +17,7 @@ tidak mengirim data ke mana pun. Mengikuti
 | Waterfall dari stempel waktu tracer (`mono_ms`) | Terverifikasi pada trace nyata M1. Entri yang melintasi batas resume dilaporkan tanpa durasi (bukan negatif). |
 | Filter endpoint (multi-endpoint) + lencana endpoint per baris | Terverifikasi (uji logika). Trace lama tanpa field endpoint tetap dibaca. |
 | Penanda sesi dilanjutkan (`tracer.session_resumed`) di metadata | Terverifikasi (uji logika). |
+| Mode live (SSE dari tracer `--live-port`) | Terverifikasi logika parse (`parseLiveEvent`) + uji live tracer; panel SSE (EventSource) belum diuji lewat browser di tahap ini. Baris live menggantikan tampilan file selama tersambung. |
 | Breakdown DNS/TLS dan ukuran byte | **Tidak ditampilkan** — datanya kosong dari CDP (timing -1, `encodedDataLength` 0) |
 | Panel konsol + filter level (`log`/`warning`/`error`/`exception`) | Terverifikasi; CDP memakai `"warning"`, bukan `"warn"` |
 | Pencarian teks (URL + teks konsol) | Terverifikasi |
