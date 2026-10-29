@@ -28,7 +28,7 @@
     "prepublishOnly": "npm run build"
   },
   "type": "module",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "repository": {
     "type": "git",
     "url": "https://github.com/stokforplayy77/LP-Trace.git",
