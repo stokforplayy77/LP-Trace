@@ -15,9 +15,9 @@ sidecar MCP (F4, M3) ada di repo ini (`../viewer/`, `../mcp-sidecar/`).
 | Hal | Status |
 |---|---|
 | Handshake Target + `sessionId` (Bab 3.3) | Terverifikasi di Lightpanda 1.0.2 (M0b + uji M1) |
-| Event: `Page.frameNavigated`, `Network.requestWillBeSent`, `Network.responseReceived`, `Network.loadingFinished`, `Network.loadingFailed`, `Runtime.consoleAPICalled`, `Runtime.exceptionThrown`, `DOM.documentUpdated` | Terverifikasi di 1.0.2 |
+| Event: `Page.frameNavigated`, `Network.requestWillBeSent`, `Network.responseReceived`, `Network.loadingFinished`, `Network.loadingFailed`, `Runtime.consoleAPICalled`, `Runtime.exceptionThrown`, `DOM.documentUpdated`, `Log.entryAdded` | Terverifikasi di 1.0.2 |
 | Level konsol | CDP memakai `"warning"` (bukan `"warn"`); `log`/`warning`/`error` terpetakan |
-| Domain `Log` | **Tidak dipakai** di MVP (sesuai Bab 3.5) |
+| Domain `Log` | Ditangkap sejak 0.1.9 (`Log.enable`; pelengkap konsol — di 1.0.2 hanya entri kegagalan pemuatan resource, terverifikasi lewat `networkRequestId` sama dengan `loadingFailed`; lihat `docs/LOG-DESIGN.md`) |
 | Field `timing` CDP | Bernilai -1 (M0/M0b); tidak disimpan, waterfall memakai stempel waktu tracer |
 | Ukuran byte / breakdown DNS/TLS | Tidak tersedia dari CDP; tidak diklaim |
 | Koeksistensi dengan Puppeteer | Terbukti di M0b; M1 tidak mengujinya ulang |
