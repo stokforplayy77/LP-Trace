@@ -70,6 +70,7 @@ test('kategori: tracer/error/konsol/navigasi/network/lainnya', () => {
 	assert.equal(categoryOf('Runtime.exceptionThrown'), 'error');
 	assert.equal(categoryOf('Network.loadingFailed'), 'error');
 	assert.equal(categoryOf('Runtime.consoleAPICalled'), 'konsol');
+	assert.equal(categoryOf('Log.entryAdded'), 'konsol');
 	assert.equal(categoryOf('Page.frameNavigated'), 'navigasi');
 	assert.equal(categoryOf('Network.requestWillBeSent'), 'network');
 	assert.equal(categoryOf('DOM.documentUpdated'), 'lainnya');
@@ -101,6 +102,48 @@ test('waterfall: entri tanpa loadingFinished -> totalMs null', () => {
 	const entries = groupWaterfall(rows);
 	assert.equal(entries.length, 1);
 	assert.equal(entries[0].totalMs, null);
+});
+
+test('LOG konsol: entri Log masuk panel konsol dengan pemetaan level + sumber', () => {
+	const mk = (seq, entry) =>
+		`{"ts":"x","mono_ms":${seq},"seq":${seq},"session":"s","lightpanda_version":"1.0.2","type":"Log.entryAdded","data":{"entry":${JSON.stringify(entry)}}}`;
+	const { rows } = parseTrace(
+		[
+			mk(1, { source: 'network', level: 'verbose', text: 'v', timestamp: 1 }),
+			mk(2, { source: 'javascript', level: 'warning', text: 'w', timestamp: 2 }),
+			mk(3, { source: 'network', level: 'error', text: 'e', timestamp: 3 }),
+			mk(4, { source: 'network', level: 'info', text: 'i', timestamp: 4 })
+		].join('\n')
+	);
+	const entries = consoleEntries(rows);
+	assert.deepEqual(
+		entries.map((e) => e.level),
+		['log', 'warning', 'error', 'log']
+	);
+	assert.deepEqual(
+		entries.map((e) => e.source),
+		['network', 'javascript', 'network', 'network']
+	);
+	assert.deepEqual(
+		entries.map((e) => e.text),
+		['v', 'w', 'e', 'i']
+	);
+	assert.equal(summarize(rows[2]), '[network/error] e');
+});
+
+test('LOG waterfall: logText tertaut lewat networkRequestId, tanpa stub bila belum ada baris Network', () => {
+	const { rows } = parseTrace(
+		[
+			'{"ts":"x","mono_ms":10,"seq":1,"session":"s","lightpanda_version":"1.0.2","type":"Network.requestWillBeSent","data":{"requestId":"R1","url":"https://a.test/","method":"GET"}}',
+			'{"ts":"x","mono_ms":20,"seq":2,"session":"s","lightpanda_version":"1.0.2","type":"Network.loadingFailed","data":{"requestId":"R1","errorText":"CouldntConnect"}}',
+			'{"ts":"x","mono_ms":30,"seq":3,"session":"s","lightpanda_version":"1.0.2","type":"Log.entryAdded","data":{"entry":{"source":"network","level":"error","text":"Failed to load resource","networkRequestId":"R1"}}}',
+			'{"ts":"x","mono_ms":40,"seq":4,"session":"s","lightpanda_version":"1.0.2","type":"Log.entryAdded","data":{"entry":{"source":"network","level":"error","text":"yatim","networkRequestId":"R2"}}}'
+		].join('\n')
+	);
+	const entries = groupWaterfall(rows);
+	assert.equal(entries.length, 1);
+	assert.equal(entries[0].logText, 'Failed to load resource');
+	assert.equal(entries[0].failed, true);
 });
 
 test('level konsol: warning dipertahankan; warn dinormalisasi ke warning', () => {
