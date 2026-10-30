@@ -19,7 +19,11 @@ hasil, atau URL lengkap — ditambah field `endpoints` (MS): agregat per
 koneksi CDP `{ endpoint, endpoint_index, label, rows, requests, errors }`,
 flag `resumed` (true bila file memuat `tracer.session_resumed`), dan
 field `sessionError` (ROBUST): `{ code, message }` dari
-`tracer.session_ended` terakhir, atau `null` bila sesi berakhir bersih.
+`tracer.session_ended` terakhir, atau `null` bila sesi berakhir bersih,
+ditambah field `log` (domain Log): `{ present, entries, byLevel,
+sources }` — agregat entri `Log.entryAdded` per level/sumber mentah
+CDP; entri Log error TIDAK menambah hitungan error (kegagalan yang
+sama dengan `Network.loadingFailed` yang sudah dihitung).
 
 `get_trace_summary` membaca ulang file trace pada setiap pemanggilan,
 sehingga ringkasannya sudah mengikuti file yang sedang ditulis tracer
@@ -41,7 +45,9 @@ Argumen:
 
 Kategori `error` mencakup `Runtime.exceptionThrown` dan
 `Network.loadingFailed` (yang terakhir ini dihitung di kategori error,
-bukan `network`). Kategori `agent` mencakup baris `agent.*` dari file
+bukan `network`). Kategori `console` mencakup
+`Runtime.consoleAPICalled` dan `Log.entryAdded` (domain Log, sejak
+0.1.9). Kategori `agent` mencakup baris `agent.*` dari file
 trace `agent --trace` upstream yang dikorelasikan tracer (F5). Level
 konsol dihitung sebagaimana diterima CDP, dengan `"warn"` dinormalisasi
 menjadi `"warning"`.
