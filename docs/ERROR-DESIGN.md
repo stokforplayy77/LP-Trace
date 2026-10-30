@@ -21,6 +21,7 @@ Kode yang dipakai:
 | `E_HANDSHAKE` | Langkah Target/enable ditolak setelah terhubung | 1 | Startup; fatal langsung |
 | `E_CDP_CLOSED` | Server menutup koneksi di tengah sesi | 0 | Sesi berakhir anggun (perilaku lama dipertahankan) |
 | `E_TRACE_LIMIT` | `--max-bytes` tercapai | 0 | Sesi berakhir, file utuh (perilaku lama) |
+| `E_RESOURCE_LIMIT` | Batas kebijakan resource tercapai (`--max-rows`/`--max-seconds`/`--max-rss-mb`; detail `policy`/`limit`/`observed`) | 0 | Sesi berakhir anggun, file utuh |
 | `E_RESUME` | Validasi `--append` gagal (sesi beda/ekor rusak) | 1 | Sebelum file disentuh |
 | `E_LIVE_PORT` | Server live gagal dibuka | 1 | Sebelum file disentuh |
 | `E_REPLAY` | Masukan `--replay` tidak dapat dibaca/tanpa navigasi | 1 | Sebelum sesi replay |
@@ -33,7 +34,7 @@ langkah endpoint ...`), penolakan attach tetap menyebut
 `Target.attachToTarget`. Yang berubah hanyalah penambahan kode dan
 `data.error`; tidak ada teks lama yang dihapus.
 
-`E_CDP_CLOSED` dan `E_TRACE_LIMIT` tetap keluar 0: keduanya adalah
+`E_CDP_CLOSED`, `E_TRACE_LIMIT`, dan `E_RESOURCE_LIMIT` tetap keluar 0: ketiganya adalah
 akhir sesi yang anggun dan terdokumentasi sejak M1/MS, dan skrip
 yang mengandalkan exit 0 tidak boleh rusak. Yang membedakan
 sekarang adalah kode di stderr dan di `session_ended`.
