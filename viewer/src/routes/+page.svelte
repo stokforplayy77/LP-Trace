@@ -26,6 +26,7 @@
 		type TraceRow
 	} from '../lib/trace';
 	import { onDestroy } from 'svelte';
+	import { liveFailureHint } from '../lib/live-hint';
 
 	let parsed = $state<ParsedTrace | null>(null);
 	let fileName = $state('');
@@ -44,6 +45,7 @@
 	// `rows` yang sama.
 	let liveUrl = $state('http://127.0.0.1:9229/events');
 	let liveStatus = $state('putus');
+	let liveHint = $state('');
 	let liveConnected = $state(false);
 	let livePaused = $state(false);
 	let liveRows = $state<TraceRow[]>([]);
@@ -267,6 +269,7 @@
 		}
 		liveConnected = false;
 		liveStatus = 'putus';
+		liveHint = '';
 	}
 
 	function connectLive() {
@@ -281,6 +284,7 @@
 		es.onopen = () => {
 			liveConnected = true;
 			liveStatus = 'tersambung';
+			liveHint = '';
 		};
 		es.onmessage = (ev: MessageEvent) => {
 			if (livePaused) return;
@@ -290,6 +294,8 @@
 		};
 		es.onerror = () => {
 			liveStatus = 'error — mencoba ulang otomatis (atau tekan Putus lalu Sambung)';
+			// EventSource tidak memberi detail error; tebak penyebab dari URL.
+			liveHint = liveFailureHint(window.location.hostname, liveUrl);
 		};
 	}
 
@@ -352,6 +358,7 @@
 			</button>
 		{/if}
 		<span class="file-name">Status: {liveStatus} · {liveRows.length} baris live{liveSkipped ? ` · ${liveSkipped} dilewati` : ''}{livePaused ? ' · dijeda' : ''}</span>
+		{#if liveHint}<p class="error" role="alert">{liveHint}</p>{/if}
 		<p class="hint">
 			Jalankan tracer dengan <code>--live-port 9229</code>; baris live menggantikan
 			tampilan file selama tersambung. Memuat file memutuskan sambungan live.
@@ -719,7 +726,8 @@
 		<p>
 			Penampil statis — jalankan lewat server statis lokal (<code>npx serve build</code> atau
 			<code>python3 -m http.server</code> dari folder <code>build</code>). Pembukaan lewat
-			<code>file://</code> tidak dijanjikan.
+			<code>file://</code> didukung varian single-file (<code>npm run build:singlefile</code>,
+			buka <code>build-singlefile/index.html</code>).
 		</p>
 	</footer>
 </main>
