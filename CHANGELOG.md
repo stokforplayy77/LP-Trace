@@ -5,14 +5,38 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-10-30
+
+### Added
+
+- Kebijakan resource per sesi (opt-in): `--max-rows`,
+  `--max-seconds`, `--max-rss-mb` (Linux saja). Saat batas
+  tercapai, sesi berakhir dengan anggun (alasan
+  `row-limit`/`time-limit`/`rss-limit`, keluar 0) dan
+  `session_ended` membawa error `E_RESOURCE_LIMIT`
+  (baru) berisi `policy`/`limit`/`observed`;
+  `session_started` mencatat `limits` yang aktif.
+  Berlaku juga di mode `--replay`.
+- Antrean tugas `--task-queue <file>`: file JSONL berisi
+  tugas navigasi (`url`, `waitMs` opsional, `connection`
+  opsional); dijalankan berurutan, baris rusak atau
+  `connection` di luar jangkauan dilewati dan dihitung
+  `skipped`; dengan `--stay`, file diawasi
+  (`--queue-poll-ms`, default 500 ms) untuk tugas
+  susulan; statistik antrean dilaporkan di
+  `session_ended`. Menolak `--navigate` dan `--replay`.
+- Rangkaian uji resource baru (27 pemeriksaan).
+
 ### Changed
 
+- Jeda antar navigasi kini dapat disela oleh
+  sinyal/pemicu kebijakan/batas ukuran (sebelumnya
+  `setTimeout` penuh).
 - Uji ketahanan: sesi panjang diperpanjang 20 -> 60 detik dengan
   pemeriksaan pertumbuhan memori datar (RSS akhir <= 1,5x RSS
   awal) dan laju stabil antar-paruh sesi; ditambah skrip soak
   manual 300 detik (`tracer-mvp/tests/run-soak-tests.mjs`,
-  bukan bagian rantai CI). Kode produk tidak berubah; tidak
-  ada rilis npm untuk perubahan ini. Lihat
+  bukan bagian rantai CI). Lihat
   `docs/SOAK-DESIGN.md` dan `docs/SOAK-HASIL.md`.
 
 ## [0.1.9] - 2026-10-30
