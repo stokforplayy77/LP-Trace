@@ -5,6 +5,20 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-10-30
+
+### Added
+
+- Perbandingan dua trace di penampil: muat file kedua
+  sebagai pembanding; ringkasan berdampingan (baris,
+  durasi, kategori, network, konsol, exception, agen),
+  diff waterfall (pasangan metode + URL, kemunculan
+  ke-n dengan ke-n, selisih durasi, status A/B,
+  kehadiran), dan diff konsol (multiset level + teks,
+  maks 100 per sisi). Memakai seluruh baris kedua file;
+  filter tidak diterapkan; panel lain tetap menampilkan
+  trace A. Lihat `docs/COMPARE-DESIGN.md`.
+
 ## [0.1.10] - 2026-10-30
 
 ### Added
