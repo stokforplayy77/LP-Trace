@@ -21,6 +21,7 @@ tidak mengirim data ke mana pun. Mengikuti
 | Breakdown DNS/TLS dan ukuran byte | **Tidak ditampilkan** — datanya kosong dari CDP (timing -1, `encodedDataLength` 0) |
 | Panel konsol + filter level (`log`/`warning`/`error`/`exception`) | Terverifikasi; CDP memakai `"warning"`, bukan `"warn"`; sejak 0.1.9 entri `Log.entryAdded` tampil di panel yang sama dengan lencana sumber (mis. `log/network`), dan teks Log tertaut ke baris waterfall lewat `networkRequestId` |
 | Pencarian teks (URL + teks konsol) | Terverifikasi |
+| Perbandingan dua trace (ringkasan + diff waterfall + diff konsol) | Terverifikasi logika (33 uji) + uji asap browser desktop & lebar 390 px (emulasi). Memakai seluruh baris kedua file; filter tidak diterapkan. Panel lain tetap menampilkan trace A. |
 | Ekspor CSV (tampilan terfilter saat ini) | Terverifikasi (logika; unduhan diuji lewat DOM di browser) |
 | Ekspor HAR | Subset **best-effort** saja (tanpa breakdown timing, tanpa ukuran), dilabeli demikian di UI |
 | Domain `Log` | Bukan sumber MVP; baris `Log.entryAdded` (bila ada) tampil sebagai event biasa |
