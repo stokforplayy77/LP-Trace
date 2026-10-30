@@ -9,6 +9,7 @@ export type TracerErrorCode =
   | "E_HANDSHAKE"
   | "E_CDP_CLOSED"
   | "E_TRACE_LIMIT"
+  | "E_RESOURCE_LIMIT"
   | "E_RESUME"
   | "E_LIVE_PORT"
   | "E_REPLAY"
