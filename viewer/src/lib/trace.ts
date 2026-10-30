@@ -28,7 +28,7 @@ export function categoryOf(type: string): Category {
 	if (type.startsWith('tracer.')) return 'tracer';
 	if (type.startsWith('agent.')) return 'agen';
 	if (type === 'Runtime.exceptionThrown' || type === 'Network.loadingFailed') return 'error';
-	if (type === 'Runtime.consoleAPICalled') return 'konsol';
+	if (type === 'Runtime.consoleAPICalled' || type === 'Log.entryAdded') return 'konsol';
 	if (type.startsWith('Page.')) return 'navigasi';
 	if (type.startsWith('Network.')) return 'network';
 	return 'lainnya';
@@ -198,6 +198,11 @@ export function summarize(row: TraceRow): string {
 				asString(d.text)
 			);
 		}
+		case 'Log.entryAdded': {
+			const entry = nestedRecord(d, 'entry');
+			if (!entry) return row.type;
+			return `[${asString(entry.source)}/${asString(entry.level)}] ${asString(entry.text)}`;
+		}
 		case 'DOM.documentUpdated':
 			return 'dokumen diperbarui (penanda kasar)';
 		case 'agent.tool': {
@@ -240,9 +245,20 @@ export interface ConsoleEntry {
 	row: TraceRow;
 	level: string;
 	text: string;
+	/** Sumber entri Log (mis. "network"); tidak ada untuk consoleAPICalled/exception. */
+	source?: string;
 }
 
-/** Entri Panel Konsol: consoleAPICalled + exceptionThrown, terurut waktu. */
+/** Level panel konsol untuk entri Log: verbose/info -> log, warning/error dipertahankan. */
+export function logEntryLevel(row: TraceRow): string {
+	const entry = nestedRecord(row.data, 'entry');
+	const raw = entry ? asString(entry.level).toLowerCase() : '';
+	if (raw === 'verbose' || raw === 'info') return 'log';
+	if (raw === 'warning' || raw === 'error') return raw;
+	return 'log';
+}
+
+/** Entri Panel Konsol: consoleAPICalled + exceptionThrown + Log.entryAdded, terurut waktu. */
 export function consoleEntries(rows: TraceRow[]): ConsoleEntry[] {
 	const out: ConsoleEntry[] = [];
 	for (const row of rows) {
@@ -251,6 +267,14 @@ export function consoleEntries(rows: TraceRow[]): ConsoleEntry[] {
 			out.push({ row, level: consoleLevel(row), text: args });
 		} else if (row.type === 'Runtime.exceptionThrown') {
 			out.push({ row, level: 'exception', text: summarize(row) });
+		} else if (row.type === 'Log.entryAdded') {
+			const entry = nestedRecord(row.data, 'entry');
+			out.push({
+				row,
+				level: logEntryLevel(row),
+				text: entry ? asString(entry.text) : '',
+				source: entry ? asString(entry.source) : ''
+			});
 		}
 	}
 	return out;
@@ -268,6 +292,8 @@ export interface WaterfallEntry {
 	endMs: number | null;
 	failed: boolean;
 	errorText: string;
+	/** Teks entri Log.entryAdded untuk request ini (via networkRequestId), atau null bila tidak ada. */
+	logText: string | null;
 	/** Durasi total dari stempel waktu tracer (ms), atau null bila belum selesai / melintasi batas resume. */
 	totalMs: number | null;
 	/** Waktu sampai respons pertama dari stempel waktu tracer (ms). */
@@ -299,6 +325,7 @@ export function groupWaterfall(rows: TraceRow[]): WaterfallEntry[] {
 				endMs: null,
 				failed: false,
 				errorText: '',
+				logText: null,
 				totalMs: null,
 				timeToResponseMs: null,
 				endpoint: row.endpoint,
@@ -343,6 +370,16 @@ export function groupWaterfall(rows: TraceRow[]): WaterfallEntry[] {
 			entry.endMs = row.mono_ms;
 			entry.failed = true;
 			entry.errorText = asString(d.errorText);
+		} else if (row.type === 'Log.entryAdded') {
+			// Tautkan teks Log ke baris waterfall lewat networkRequestId
+			// (terverifikasi sama dengan requestId Network pada 1.0.2).
+			// Hanya bila baris Network-nya sudah ada; requestWillBeSent
+			// selalu mendahului entri Log untuk request yang sama.
+			const entry = nestedRecord(d, 'entry');
+			if (entry) {
+				const existing = map.get(asString(entry.networkRequestId));
+				if (existing) existing.logText = asString(entry.text);
+			}
 		}
 	}
 	return order.map((id) => {
