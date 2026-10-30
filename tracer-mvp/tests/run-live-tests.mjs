@@ -285,6 +285,21 @@ async function findLightpanda() {
   return null;
 }
 
+/** Permintaan HTTP mentah (header terkirim verbatim, tanpa normalisasi fetch). */
+function rawRequest(port, method, path, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { host: "127.0.0.1", port, method, path, headers },
+      (res) => {
+        res.resume();
+        res.on("end", () => resolve({ status: res.statusCode, headers: res.headers }));
+      },
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
 async function main() {
   const workDir = await mkdtemp(join(tmpdir(), "live-test-"));
   console.log(`Uji live + replay — workdir ${workDir}`);
@@ -395,6 +410,42 @@ async function main() {
       "uji 3b header CORS ada",
       healthRes.headers.get("access-control-allow-origin") === "*",
       healthRes.headers.get("access-control-allow-origin") ?? "null",
+    );
+    const pnaPreflight = await rawRequest(LIVE_PORT, "OPTIONS", "/health", {
+      Origin: "https://penampil.example",
+      "Access-Control-Request-Method": "GET",
+      "Access-Control-Request-Private-Network": "true",
+    });
+    check(
+      "uji 3g preflight PNA menjawab Allow-Private-Network",
+      pnaPreflight.status === 204 &&
+        pnaPreflight.headers["access-control-allow-private-network"] === "true",
+      `status=${pnaPreflight.status} header=${pnaPreflight.headers["access-control-allow-private-network"] ?? "null"}`,
+    );
+    const plainPreflight = await rawRequest(LIVE_PORT, "OPTIONS", "/health", {
+      Origin: "https://penampil.example",
+      "Access-Control-Request-Method": "GET",
+    });
+    check(
+      "uji 3h preflight tanpa permintaan PNA tidak membawa header PNA",
+      plainPreflight.status === 204 &&
+        plainPreflight.headers["access-control-allow-private-network"] === undefined,
+      `status=${plainPreflight.status} header=${plainPreflight.headers["access-control-allow-private-network"] ?? "null"}`,
+    );
+    const pnaHealth = await rawRequest(LIVE_PORT, "GET", "/health", {
+      "Access-Control-Request-Private-Network": "true",
+    });
+    check(
+      "uji 3i GET /health menggemakan header PNA bila diminta",
+      pnaHealth.status === 200 && pnaHealth.headers["access-control-allow-private-network"] === "true",
+      `status=${pnaHealth.status}`,
+    );
+    const plainHealth = await rawRequest(LIVE_PORT, "GET", "/health", {});
+    check(
+      "uji 3j GET /health tanpa permintaan PNA tidak membawa header PNA",
+      plainHealth.status === 200 &&
+        plainHealth.headers["access-control-allow-private-network"] === undefined,
+      `status=${plainHealth.status}`,
     );
     const eventsP = collectSse(`http://127.0.0.1:${LIVE_PORT}/events`, 12000);
     await sleep(2500);
