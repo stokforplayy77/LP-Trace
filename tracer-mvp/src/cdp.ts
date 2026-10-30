@@ -283,7 +283,7 @@ export async function performHandshake(
 
 /** Langkah 5: kirim enable dengan sessionId yang sudah diset. */
 export async function enableDomains(client: CdpClient): Promise<void> {
-  for (const method of ["Page.enable", "Network.enable", "Runtime.enable"]) {
+  for (const method of ["Page.enable", "Network.enable", "Runtime.enable", "Log.enable"]) {
     try {
       await client.send(method);
     } catch (e) {
