@@ -22,6 +22,20 @@ const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Headers": "*",
 };
 
+// PNA (Private Network Access, W3C): browser Chromium mengirim preflight
+// dengan `Access-Control-Request-Private-Network: true` saat halaman dari
+// address space yang kurang privat (mis. HTTPS publik) mengakses server
+// loopback ini. Jawab dengan `Access-Control-Allow-Private-Network: true`
+// HANYA bila diminta, supaya respons biasa tidak mengklaim izin PNA.
+// Catatan: konteks insecure (HTTP dari IP publik) tetap diblokir Chrome
+// apa pun jawaban preflight — lihat docs/PNA-DESIGN.md.
+function corsHeaders(req: IncomingMessage): Record<string, string> {
+  if (req.headers["access-control-request-private-network"] === "true") {
+    return { ...CORS_HEADERS, "Access-Control-Allow-Private-Network": "true" };
+  }
+  return CORS_HEADERS;
+}
+
 export async function startLiveServer(
   port: number,
   session: string,
@@ -43,12 +57,12 @@ export async function startLiveServer(
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     if (req.method === "OPTIONS") {
-      res.writeHead(204, CORS_HEADERS);
+      res.writeHead(204, corsHeaders(req));
       res.end();
       return;
     }
     if (url.pathname === "/health") {
-      res.writeHead(200, { ...CORS_HEADERS, "Content-Type": "application/json" });
+      res.writeHead(200, { ...corsHeaders(req), "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
           status: "ok",
@@ -62,7 +76,7 @@ export async function startLiveServer(
     }
     if (url.pathname === "/events") {
       res.writeHead(200, {
-        ...CORS_HEADERS,
+        ...corsHeaders(req),
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
@@ -76,7 +90,7 @@ export async function startLiveServer(
       res.on("error", remove);
       return;
     }
-    res.writeHead(404, { ...CORS_HEADERS, "Content-Type": "application/json" });
+    res.writeHead(404, { ...corsHeaders(req), "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "not found" }));
   });
 
