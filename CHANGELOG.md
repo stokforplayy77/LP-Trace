@@ -5,6 +5,26 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
 
 ## [Unreleased]
 
+### Added
+
+- Varian build single-file penampil (`npm run build:singlefile`):
+  `build-singlefile/index.html` berisi JS/CSS inline dan bisa dibuka
+  lewat `file://` (teruji di Chromium headless: boot, muat trace lewat
+  pemilih file, dan live SSE dari halaman `file://` tersambung).
+  Batas yang teruji: tombol "Muat trace contoh" gagal anggun di
+  `file://` (fetch file diblokir CORS) — muat lewat pemilih file;
+  konsol browser menampilkan kegagalan preload redundan untuk chunk
+  yang sudah inline (tidak memengaruhi fungsi). Build normal tidak
+  berubah. Implementasi: `viewer/scripts/build-singlefile.mjs`
+  (bundle esbuild + pengaman `node --check` pada modul tertanam).
+- Panduan saat sambungan live gagal: panel live kini menampilkan
+  penyebab paling mungkin — bila SSE loopback diakses dari origin
+  non-loopback, ditampilkan panduan Private Network Access
+  (`localhost:8103` + izin Local Network Access); bila tidak,
+  panduan generik (periksa tracer/tunnel). Logika murni di
+  `viewer/src/lib/live-hint.ts` dengan 5 uji baru (total uji
+  penampil 38).
+
 ## [0.1.12] - 2026-10-30
 
 ### Added
