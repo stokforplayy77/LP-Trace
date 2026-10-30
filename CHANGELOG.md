@@ -5,6 +5,22 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-10-30
+
+### Added
+
+- Dukungan preflight Private Network Access (PNA) di server live
+  tracer: bila request membawa
+  `Access-Control-Request-Private-Network: true`, respons
+  (preflight OPTIONS, `/health`, `/events`, 404) menggemakan
+  `Access-Control-Allow-Private-Network: true`. Rangkaian live
+  bertambah 4 pemeriksaan (35 total). Catatan batas: header ini
+  menjadi gerbang di Chrome lama; di Chrome 142+ gerbang yang
+  menentukan adalah izin Local Network Access di browser
+  (prompt saat pertama menyambung dari penampil HTTPS), dan
+  origin HTTP dari IP publik tetap diblokir sebagai konteks
+  insecure. Lihat `docs/PNA-DESIGN.md`.
+
 ## [0.1.11] - 2026-10-30
 
 ### Added
