@@ -1,6 +1,7 @@
 // run-robust-tests.mjs — Uji ketahanan terhadap Lightpanda 1.0.2 sungguhan:
 //  1. koeksistensi Playwright (connectOverCDP) berdampingan dengan tracer,
-//  2. sesi panjang 20 detik dengan aliran event berlanjut + batas RSS,
+//  2. sesi panjang 60 detik dengan aliran event berlanjut + batas RSS
+//     dan pertumbuhan memori datar (SOAK-DESIGN.md),
 //  3. beban besar: 100 fetch dalam satu halaman (plus 60 <img> yang
 //     Lightpanda 1.0.2 terbukti tidak pernah fetch — temuan, bukan gate).
 // Keluar bukan nol bila ada pemeriksaan gagal. Binary Lightpanda dicari
@@ -17,7 +18,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SERVE_PORT = Number(process.env.ROBUST_SERVE_PORT || 9251);
 const HTTP_PORT = Number(process.env.ROBUST_HTTP_PORT || 8786);
 const CDP = `ws://127.0.0.1:${SERVE_PORT}`;
-const LONG_MS = 20000;
+const LONG_MS = 60000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const failures = [];
@@ -213,17 +214,22 @@ function makeHttpServer() {
 
 async function sampleRssKb(pid, stopFlag, samples) {
   // Linux saja; di platform lain kembalikan null (pemeriksaan dilewati).
+  // samples menerima nilai RSS tiap detik (bukan running max), agar
+  // pertumbuhan memori dapat dinilai dari deretnya.
   if (process.platform !== "linux") return null;
   let max = 0;
   while (!stopFlag.done) {
     try {
       const status = await readFile(`/proc/${pid}/status`, "utf8");
       const m = status.match(/VmRSS:\s+(\d+)\s+kB/);
-      if (m) max = Math.max(max, Number(m[1]));
+      if (m) {
+        const cur = Number(m[1]);
+        samples.push(cur);
+        max = Math.max(max, cur);
+      }
     } catch {
       break;
     }
-    samples.push(max);
     await sleep(1000);
   }
   return max;
@@ -298,7 +304,7 @@ try {
     await sleep(500);
   }
 
-  // ---------- Uji 2: sesi panjang 20 detik ----------
+  // ---------- Uji 2: sesi panjang 60 detik ----------
   console.log("== uji 2: sesi panjang ==");
   {
     const outFile = join(workdir, "panjang.jsonl");
@@ -311,7 +317,8 @@ try {
     await waitForRows(outFile, 3);
     check("tracer menulis >= 3 baris sebelum sesi panjang", (await rowsCount(outFile)) >= 3);
     const stopFlag = { done: false };
-    const rssPromise = sampleRssKb(tracer.pid, stopFlag, []);
+    const rssSamples = [];
+    const rssPromise = sampleRssKb(tracer.pid, stopFlag, rssSamples);
     await sleep(LONG_MS);
     stopFlag.done = true;
     const maxRssKb = await rssPromise;
@@ -320,10 +327,17 @@ try {
     check("sesi panjang: tracer keluar 0 setelah SIGINT", exit.code === 0, `code=${exit.code}`);
     const { rows, broken } = await readRows(outFile);
     const consoleRows = rows.filter((r) => r.type === "Runtime.consoleAPICalled").length;
+    const denyutReqs = rows.filter(
+      (r) =>
+        r.type === "Network.requestWillBeSent" &&
+        typeof r.data?.request?.url === "string" &&
+        r.data.request.url.includes("/denyut"),
+    ).length;
     const ended = rows.find((r) => r.type === "tracer.session_ended");
-    console.log(`  sesi panjang: ${rows.length} baris, ${consoleRows} console, RSS puncak ${maxRssKb === null ? "tak terukur" : Math.round(maxRssKb / 1024) + " MB"}`);
-    check("sesi panjang: >= 40 baris", rows.length >= 40, `rows=${rows.length}`);
-    check("sesi panjang: >= 20 panggilan konsol", consoleRows >= 20, `console=${consoleRows}`);
+    console.log(`  sesi panjang: ${rows.length} baris, ${consoleRows} console, ${denyutReqs} denyut, RSS puncak ${maxRssKb === null ? "tak terukur" : Math.round(maxRssKb / 1024) + " MB"}`);
+    check("sesi panjang: >= 150 baris", rows.length >= 150, `rows=${rows.length}`);
+    check("sesi panjang: >= 90 panggilan konsol", consoleRows >= 90, `console=${consoleRows}`);
+    check("sesi panjang: >= 45 request denyut", denyutReqs >= 45, `denyut=${denyutReqs}`);
     check("sesi panjang: seq bersambung", seqContiguous(rows));
     check("sesi panjang: mono_ms tak turun", monoNonDecreasing(rows));
     check("sesi panjang: session_ended beralasan signal-SIGINT", ended?.data?.reason === "signal-SIGINT", `reason=${ended?.data?.reason}`);
@@ -332,6 +346,27 @@ try {
       console.log("  DILEWATI: RSS tak terukur di platform ini");
     } else {
       check("sesi panjang: RSS puncak < 256 MB", maxRssKb < 256 * 1024, `rss=${Math.round(maxRssKb / 1024)} MB`);
+      // Pertumbuhan: rata-rata 10 sampel terakhir <= 1,5x rata-rata
+      // jendela detik 10-20 (setelah pemanasan startup). Butuh >= 30
+      // sampel; bila kurang, dilewati dengan pesan.
+      if (rssSamples.length >= 30) {
+        const avg = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+        const early = avg(rssSamples.slice(10, 20));
+        const late = avg(rssSamples.slice(-10));
+        console.log(`  RSS awal (dtk 10-20): ${Math.round(early / 1024)} MB, akhir (10 sampel terakhir): ${Math.round(late / 1024)} MB`);
+        check("sesi panjang: RSS akhir <= 1,5x RSS awal (datar)", late <= early * 1.5, `awal=${Math.round(early / 1024)} MB akhir=${Math.round(late / 1024)} MB`);
+      } else {
+        console.log(`  DILEWATI: sampel RSS hanya ${rssSamples.length} (< 30)`);
+      }
+    }
+    // Laju stabil: paruh kedua sesi menulis >= 50% baris paruh pertama
+    // (writer tidak makin tertinggal).
+    const monos = rows.map((r) => r.mono_ms).filter((v) => typeof v === "number");
+    if (monos.length >= 2) {
+      const mid = (Math.min(...monos) + Math.max(...monos)) / 2;
+      const firstHalf = rows.filter((r) => r.mono_ms < mid).length;
+      const secondHalf = rows.length - firstHalf;
+      check("sesi panjang: paruh kedua >= 50% paruh pertama", secondHalf >= firstHalf * 0.5, `paruh1=${firstHalf} paruh2=${secondHalf}`);
     }
     serveProc.kill("SIGKILL");
     serveProc = null;
