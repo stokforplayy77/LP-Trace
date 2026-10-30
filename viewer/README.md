@@ -25,7 +25,7 @@ tidak mengirim data ke mana pun. Mengikuti
 | Ekspor CSV (tampilan terfilter saat ini) | Terverifikasi (logika; unduhan diuji lewat DOM di browser) |
 | Ekspor HAR | Subset **best-effort** saja (tanpa breakdown timing, tanpa ukuran), dilabeli demikian di UI |
 | Domain `Log` | Bukan sumber MVP; baris `Log.entryAdded` (bila ada) tampil sebagai event biasa |
-| Pembukaan lewat `file://` | **Tidak berfungsi** (teruji 30 Okt 2026: modul ES diblokir CORS, halaman kosong) — jalankan lewat server statis lokal |
+| Pembukaan lewat `file://` | **Didukung varian single-file**: `npm run build:singlefile`, buka `build-singlefile/index.html` (teruji 30 Okt 2026 di Chromium headless: boot, muat lewat pemilih file, live SSE tersambung). Batas: tombol "Muat trace contoh" gagal anggun (fetch file diblokir CORS); konsol menampilkan kegagalan preload redundan chunk inline (tidak memengaruhi fungsi). Build normal tetap lewat server statis lokal |
 | Tampilan di HP / perangkat nyata | Dilihat di HP nyata (Android, lewat deploy VPS, 29 Okt 2026): halaman termuat dan terlihat. Pemeriksaan detail (luapan horizontal, unduh CSV) belum dilaporkan; panel live terverifikasi di browser laptop (30 Okt 2026). |
 
 ## Syarat
