@@ -19,7 +19,7 @@ tidak mengirim data ke mana pun. Mengikuti
 | Penanda sesi dilanjutkan (`tracer.session_resumed`) di metadata | Terverifikasi (uji logika). |
 | Mode live (SSE dari tracer `--live-port`) | Terverifikasi logika parse (`parseLiveEvent`) + uji live tracer; panel SSE (EventSource) belum diuji lewat browser di tahap ini. Baris live menggantikan tampilan file selama tersambung. |
 | Breakdown DNS/TLS dan ukuran byte | **Tidak ditampilkan** — datanya kosong dari CDP (timing -1, `encodedDataLength` 0) |
-| Panel konsol + filter level (`log`/`warning`/`error`/`exception`) | Terverifikasi; CDP memakai `"warning"`, bukan `"warn"` |
+| Panel konsol + filter level (`log`/`warning`/`error`/`exception`) | Terverifikasi; CDP memakai `"warning"`, bukan `"warn"`; sejak 0.1.9 entri `Log.entryAdded` tampil di panel yang sama dengan lencana sumber (mis. `log/network`), dan teks Log tertaut ke baris waterfall lewat `networkRequestId` |
 | Pencarian teks (URL + teks konsol) | Terverifikasi |
 | Ekspor CSV (tampilan terfilter saat ini) | Terverifikasi (logika; unduhan diuji lewat DOM di browser) |
 | Ekspor HAR | Subset **best-effort** saja (tanpa breakdown timing, tanpa ukuran), dilabeli demikian di UI |
@@ -58,7 +58,8 @@ best-effort).
 ## Struktur
 
 - `src/lib/trace.ts` — logika murni: parsing JSONL, kategori (termasuk
-  `agen` untuk baris `agent.*` dari F5), waterfall, filter
+  `agen` untuk baris `agent.*` dari F5 dan `Log.entryAdded` di kategori
+  konsol sejak 0.1.9), waterfall, filter
   konsol/pencarian/endpoint, Panel Agen (`agentEntries`), CSV, HAR subset.
   Tanpa dependensi framework; diuji langsung oleh `tests/`.
 - `src/routes/+page.svelte` — seluruh UI (satu halaman).
