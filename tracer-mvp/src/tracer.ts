@@ -17,6 +17,12 @@ import { redactEvent } from "./redact.js";
 import { TracerError } from "./errors.js";
 import { startLiveServer, type LiveServer } from "./live.js";
 import { BufferedWriter, SizeLimitReached } from "./writer.js";
+import {
+  ResourcePolicy,
+  reasonForTrip,
+  type PolicyTrip,
+} from "./policy.js";
+import { TaskQueue, type QueueTask } from "./queue.js";
 
 export interface TracerOptions {
   /** Satu kemunculan = satu koneksi CDP (satu target). Boleh mengulang URL yang sama. */
@@ -41,6 +47,16 @@ export interface TracerOptions {
   retryDelayMs: number;
   /** Bila true (--survive), penutupan satu koneksi tidak mengakhiri sesi selama masih ada koneksi lain yang hidup; penutupan itu dicatat sebagai baris tracer.connection_closed. Tanpa flag ini, penutupan koneksi mana pun mengakhiri sesi (perilaku MS). */
   survive: boolean;
+  /** Batas baris total file trace (RESOURCE-DESIGN.md §1); null = tanpa batas. */
+  maxRows: number | null;
+  /** Batas durasi sesi, detik; null = tanpa batas. */
+  maxSeconds: number | null;
+  /** Batas RSS proses sendiri, MB (Linux saja); null = tanpa batas. */
+  maxRssMb: number | null;
+  /** Path file antrean tugas JSONL; null = tanpa antrean. */
+  taskQueue: string | null;
+  /** Interval pengawasan file antrean saat --stay, ms. */
+  queuePollMs: number;
 }
 
 export interface TracerOutcome {
@@ -207,10 +223,52 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
     session = opts.session ?? generateSessionId();
   }
 
+  // Antrean dibaca SEBELUM file trace disentuh: kegagalan baca adalah
+  // kegagalan validasi awal, bukan akhir sesi.
+  let taskQueue: TaskQueue | null = null;
+  let initialQueueTasks: QueueTask[] = [];
+  const queueStats = { done: 0, skipped: 0 };
+  let pendingTasks: QueueTask[] = [];
+  if (opts.taskQueue !== null) {
+    taskQueue = new TaskQueue(opts.taskQueue);
+    const initial = await taskQueue.loadInitial();
+    initialQueueTasks = initial.tasks;
+    queueStats.skipped += initial.skipped;
+  }
+
   let limitReached = false;
   // Error terstruktur untuk baris session_ended: diisi oleh jalur
   // kegagalan (handshake/cdp-closed/limit) sebelum shutdown().
   let sessionError: Record<string, unknown> | null = null;
+  // Pemicu kebijakan resource pertama yang tercapai (RESOURCE-DESIGN
+  // §1); null bila belum ada. Pemicu pertama menang dan tidak menimpa
+  // sessionError yang sudah ada (mis. E_TRACE_LIMIT).
+  let policyTrip: PolicyTrip | null = null;
+  const noteTrip = (trip: PolicyTrip): void => {
+    if (policyTrip !== null) return;
+    policyTrip = trip;
+    if (sessionError === null) {
+      sessionError = {
+        code: "E_RESOURCE_LIMIT",
+        policy: trip.policy,
+        limit: trip.limit,
+        observed: trip.observed,
+      };
+    }
+    console.error(
+      `lp-tracer: [E_RESOURCE_LIMIT] batas ${trip.policy} tercapai (batas ${trip.limit}, teramati ${trip.observed}); mengakhiri sesi.`,
+    );
+  };
+  // Alasan akhir sesi: pemicu kebijakan bila ada, lalu batas ukuran,
+  // lalu alasan normal pemanggil.
+  const endReason = (fallback: string): string =>
+    policyTrip !== null
+      ? reasonForTrip(policyTrip)
+      : limitReached
+        ? "size-limit"
+        : fallback;
+  // Timer pemeriksaan waktu/RSS; dibuat sesudah handshake berhasil.
+  let policyTimer: NodeJS.Timeout | null = null;
   // Mode live dimulai SEBELUM file dibuka: port yang sudah dipakai
   // menggagalkan sesi sebelum file trace disentuh.
   let live: LiveServer | null = null;
@@ -246,6 +304,17 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
   // Pasangan jam dinding untuk startMono: dipakai menghitung mono_ms
   // baris agen berjangkar (ts berjangkar - startWallMs, dibatasi 0).
   const startWallMs = Date.now();
+  const policy = new ResourcePolicy(
+    {
+      maxRows: opts.maxRows,
+      maxSeconds: opts.maxSeconds,
+      maxRssMb: opts.maxRssMb,
+    },
+    startMono,
+  );
+  const limits = policy.describe();
+  const limitsData =
+    Object.keys(limits).length > 0 ? { limits } : {};
   let ended = false;
   let shutdownRequested = false;
   let exitCode = 0;
@@ -263,6 +332,9 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
     origin: RowOrigin = { endpoint: "", endpointIndex: -1, version: lightpandaVersion },
     timeMs?: number,
   ): boolean => {
+    // Sesudah pemicu kebijakan: tidak ada baris lagi (session_ended
+    // memakai writeSessionEnd, bukan jalur ini).
+    if (policyTrip !== null) return false;
     const nextSeq = seq + 1;
     const wallMs = timeMs ?? Date.now();
     const row = {
@@ -286,6 +358,10 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
       eventsWritten += 1;
       // Mode live: siarkan baris yang sama persis setelah berhasil ditulis.
       live?.broadcast(line);
+      // Batas baris dihitung dari seq (nomor urut = jumlah baris dalam
+      // file di bawah invarian seq bersambung, termasuk resume).
+      const trip = policy.checkRows(seq);
+      if (trip !== null) noteTrip(trip);
     }
     return ok;
   };
@@ -330,12 +406,14 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
       cdp: opts.cdpUrls[0],
       endpoints: opts.cdpUrls,
       ...(opts.includeBodies ? { includeBodies: true } : {}),
+      ...limitsData,
     });
   } else {
     writeRow("tracer.session_started", {
       cdp: opts.cdpUrls[0],
       endpoints: opts.cdpUrls,
       ...(opts.includeBodies ? { includeBodies: true } : {}),
+      ...limitsData,
     });
   }
 
@@ -345,7 +423,7 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
     tailer = new AgentTraceTailer(
       opts.agentTrace,
       (row) => {
-        if (shutdownRequested || limitReached) return;
+        if (shutdownRequested || limitReached || policyTrip !== null) return;
         writeRow(row.type, row.data, undefined, row.tsMs);
       },
       opts.includeBodies,
@@ -374,6 +452,10 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
     if (shutdownRequested) return;
     shutdownRequested = true;
     exitCode = code;
+    if (policyTimer !== null) {
+      clearInterval(policyTimer);
+      policyTimer = null;
+    }
     for (const c of clients) {
       try {
         c.close();
@@ -387,6 +469,16 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
     }
     if (closedEndpoints.length > 0) {
       endExtra = { ...endExtra, closedEndpoints: [...closedEndpoints] };
+    }
+    if (opts.taskQueue !== null) {
+      endExtra = {
+        ...endExtra,
+        queue: {
+          done: queueStats.done,
+          skipped: queueStats.skipped,
+          remaining: pendingTasks.length,
+        },
+      };
     }
     if (tailer !== null) {
       const stats = await tailer.stop();
@@ -472,7 +564,7 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
       const version = versions[i] as string;
       const origin: RowOrigin = { endpoint: url, endpointIndex: i, version };
       client.onEvent((method, params) => {
-        if (shutdownRequested || limitReached) return;
+        if (shutdownRequested || limitReached || policyTrip !== null) return;
         const data = redactEvent(method, params, {
           includeBodies: opts.includeBodies,
         });
@@ -562,6 +654,30 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
     };
   }
 
+  // Timer kebijakan waktu/RSS: mulai sesudah handshake agar sesi yang
+  // gagal handshake tidak berakhir dengan alasan batas. Jam dihitung
+  // dari startMono, jadi waktu handshake tetap termasuk durasi sesi.
+  if (policy.active && (opts.maxSeconds !== null || opts.maxRssMb !== null)) {
+    policyTimer = setInterval(() => {
+      if (shutdownRequested || policyTrip !== null) return;
+      const trip =
+        policy.checkTime(performance.now()) ?? policy.sampleRss();
+      if (trip !== null) noteTrip(trip);
+    }, 1000);
+    policyTimer.unref?.();
+  }
+
+  // Jeda yang dapat disela oleh sinyal/pemicu kebijakan/batas ukuran.
+  const interruptibleWait = async (ms: number): Promise<void> => {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      if (shutdownRequested || policyTrip !== null || limitReached) return;
+      await new Promise((r) =>
+        setTimeout(r, Math.min(50, end - Date.now())),
+      );
+    }
+  };
+
   // Navigasi yang digerakkan tracer sendiri. Satu --cdp: semua --navigate
   // berurutan pada target yang sama (perilaku M1). Beberapa --cdp:
   // --navigate dipasangkan berurutan, navigasi ke-i untuk koneksi ke-i
@@ -576,7 +692,7 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
             connIndex: i,
           }));
     for (const { client, url, connIndex } of plan) {
-      if (shutdownRequested || limitReached) break;
+      if (shutdownRequested || limitReached || policyTrip !== null) break;
       try {
         await client.send("Page.navigate", { url });
       } catch (e) {
@@ -584,10 +700,10 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
           `lp-tracer: [E_NAVIGATE] Page.navigate ke ${url} (koneksi ${connIndex}) gagal: ${e instanceof Error ? e.message : String(e)}`,
         );
       }
-      await new Promise((r) => setTimeout(r, opts.waitMs));
+      await interruptibleWait(opts.waitMs);
     }
     if (!opts.stay && !shutdownRequested) {
-      await shutdown(limitReached ? "size-limit" : "navigations-done", 0);
+      await shutdown(endReason("navigations-done"), 0);
       process.removeListener("SIGINT", onSignal);
       process.removeListener("SIGTERM", onSignal);
       return {
@@ -600,8 +716,85 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
     }
   }
 
-  if (limitReached) {
-    await shutdown("size-limit", 0);
+  // Antrean tugas (RESOURCE-DESIGN.md §2): navigasi dari file JSONL.
+  // Saling lepas dengan --navigate (ditolak CLI). Tanpa --stay,
+  // kerjakan tugas yang ada lalu akhiri; dengan --stay, awasi file
+  // untuk tugas susulan sampai sinyal/batas. Sesudah pengawasan
+  // berakhir (trip/sinyal/file hilang), jatuh ke loop pasif di bawah
+  // agar shutdown dan pengembalian ditangani seragam.
+  if (taskQueue !== null) {
+    const queue = taskQueue;
+    pendingTasks = [...initialQueueTasks];
+    const runQueueTask = async (task: QueueTask): Promise<void> => {
+      if (task.connection >= clients.length) {
+        queueStats.skipped++;
+        console.error(
+          `lp-tracer: tugas antrean dilewati: connection ${task.connection} di luar jangkauan (${clients.length} koneksi).`,
+        );
+        return;
+      }
+      try {
+        await clients[task.connection]?.send("Page.navigate", {
+          url: task.url,
+        });
+      } catch (e) {
+        console.error(
+          `lp-tracer: [E_NAVIGATE] Page.navigate ke ${task.url} (koneksi ${task.connection}) gagal: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+      queueStats.done++;
+      await interruptibleWait(task.waitMs ?? opts.waitMs);
+    };
+    const drainPending = async (): Promise<void> => {
+      while (pendingTasks.length > 0) {
+        if (shutdownRequested || policyTrip !== null || limitReached) break;
+        const task = pendingTasks.shift() as QueueTask;
+        await runQueueTask(task);
+      }
+    };
+    await drainPending();
+    if (!opts.stay && !shutdownRequested) {
+      await shutdown(endReason("tasks-done"), 0);
+      process.removeListener("SIGINT", onSignal);
+      process.removeListener("SIGTERM", onSignal);
+      return {
+        exitCode: 0,
+        session,
+        lightpandaVersion,
+        eventsWritten,
+        limitReached,
+      };
+    }
+    if (opts.stay) {
+      let watchAlive = true;
+      while (
+        !shutdownRequested &&
+        policyTrip === null &&
+        !limitReached &&
+        watchAlive
+      ) {
+        let more: { tasks: QueueTask[]; skipped: number };
+        try {
+          more = await queue.pollNew();
+        } catch {
+          console.error(
+            "lp-tracer: file antrean tidak dapat dibaca lagi; pengawasan antrean dihentikan, sesi berlanjut pasif.",
+          );
+          watchAlive = false;
+          break;
+        }
+        queueStats.skipped += more.skipped;
+        pendingTasks.push(...more.tasks);
+        await drainPending();
+        if (pendingTasks.length === 0) {
+          await interruptibleWait(opts.queuePollMs);
+        }
+      }
+    }
+  }
+
+  if (limitReached || policyTrip !== null) {
+    await shutdown(endReason("size-limit"), 0);
     process.removeListener("SIGINT", onSignal);
     process.removeListener("SIGTERM", onSignal);
     return {
@@ -621,9 +814,9 @@ export async function runTracer(opts: TracerOptions): Promise<TracerOutcome> {
       if (shutdownRequested) {
         clearInterval(check);
         resolve();
-      } else if (limitReached) {
+      } else if (limitReached || policyTrip !== null) {
         clearInterval(check);
-        void shutdown("size-limit", 0).then(() => resolve());
+        void shutdown(endReason("size-limit"), 0).then(() => resolve());
       }
     }, 100);
     check.unref?.();
