@@ -807,6 +807,83 @@ test("ANCHOR durasi: rentang min/maks ts, baris agen berjangkar mendahului sesi"
   });
 });
 
+test("LOG agregat: entri Log terpisah, error tidak naik, kategori console", async (t) => {
+  const dir = await tmpDir(t);
+  const tracePath = path.join(dir, "log.jsonl");
+  const row = (seq, ts, mono_ms, type, data) =>
+    JSON.stringify({
+      ts,
+      mono_ms,
+      seq,
+      session: "log-sidecar",
+      lightpanda_version: "1.0.2",
+      endpoint: "",
+      endpoint_index: -1,
+      type,
+      data,
+    });
+  await fs.writeFile(
+    tracePath,
+    [
+      row(1, "2026-10-29T07:00:00.000Z", 0, "tracer.session_started", {}),
+      row(2, "2026-10-29T07:00:00.100Z", 100, "Network.requestWillBeSent", {
+        request: { url: "http://127.0.0.1:9/x" },
+      }),
+      row(3, "2026-10-29T07:00:00.200Z", 200, "Network.loadingFailed", {
+        requestId: "REQ-1",
+        errorText: "CouldntConnect",
+      }),
+      row(4, "2026-10-29T07:00:00.300Z", 300, "Log.entryAdded", {
+        entry: {
+          source: "network",
+          level: "error",
+          text: "Failed to load resource",
+          networkRequestId: "REQ-1",
+        },
+      }),
+      row(5, "2026-10-29T07:00:00.400Z", 400, "Log.entryAdded", {
+        entry: { source: "javascript", level: "warning", text: "w" },
+      }),
+      row(6, "2026-10-29T07:00:00.500Z", 500, "Runtime.consoleAPICalled", {
+        type: "log",
+        args: ["halo"],
+      }),
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await withClient(tracePath, async (client) => {
+    const summary = await callToolJson(client, "get_trace_summary", {});
+    assert.deepEqual(summary.log, {
+      present: true,
+      entries: 2,
+      byLevel: { error: 1, warning: 1 },
+      sources: { network: 1, javascript: 1 },
+    });
+    // Entri Log error adalah kegagalan yang sama dengan loadingFailed:
+    // errors tetap 1, bukan 2.
+    assert.equal(summary.errors, 1);
+    assert.deepEqual(summary.errorBreakdown, { exceptions: 0, failedRequests: 1 });
+    assert.deepEqual(summary.consoleByLevel, { log: 1 });
+    const consoleOnly = await callToolJson(client, "get_trace_summary", { category: "console" });
+    assert.equal(consoleOnly.rows, 3);
+    assert.deepEqual(consoleOnly.eventsByType, {
+      "Log.entryAdded": 2,
+      "Runtime.consoleAPICalled": 1,
+    });
+  });
+});
+
+test("LOG agregat: file tanpa entri Log -> present false, nol", async (t) => {
+  const dir = await tmpDir(t);
+  const copy = path.join(dir, "trace.jsonl");
+  await fs.copyFile(REAL_FIXTURE, copy);
+  await withClient(copy, async (client) => {
+    const summary = await callToolJson(client, "get_trace_summary", {});
+    assert.deepEqual(summary.log, { present: false, entries: 0, byLevel: {}, sources: {} });
+  });
+});
+
 test("ROBUST sessionError: dari session_ended terakhir, null bila berakhir bersih", async (t) => {
   const dir = await tmpDir(t);
   const row = (seq, mono_ms, type, data) =>
