@@ -9,6 +9,7 @@ import { runTracer } from "./tracer.js";
 import { runReplay } from "./replay.js";
 import { formatTracerError } from "./errors.js";
 import { VERSION } from "./version.js";
+import { access } from "node:fs/promises";
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
 const MIN_MAX_BYTES = 4096;
 const DEFAULT_WAIT_MS = 1500;
@@ -38,6 +39,20 @@ OPSI
   --max-bytes <n>      Batas ukuran file trace (default 50 MB, minimum 4096).
                        Bila tercapai, penulisan berhenti; data lama tidak ditimpa.
                        Dengan --append, batas berlaku untuk ukuran total file.
+  --max-rows <n>       Batas jumlah baris total file trace (dengan --append:
+                       baris lama + baris sesi ini). Bila tercapai, sesi
+                       berakhir dengan anggun (alasan row-limit).
+  --max-seconds <n>    Batas durasi sesi, detik. Bila tercapai, sesi berakhir
+                       dengan anggun (alasan time-limit).
+  --max-rss-mb <n>     Batas RSS proses tracer, MB (Linux saja; di platform
+                       lain flag ini ditolak). Bila tercapai, sesi berakhir
+                       dengan anggun (alasan rss-limit).
+  --task-queue <file>  File antrean tugas JSONL (satu tugas per baris:
+                       {"url", "waitMs"?, "connection"?}). Tugas dijalankan
+                       berurutan; dengan --stay, file diawasi untuk tugas
+                       susulan. Menolak --navigate dan --replay.
+  --queue-poll-ms <n>  Interval pengawasan file antrean, ms (default 500,
+                       minimum 50).
   --navigate <url>     Navigasikan koneksi ke URL ini (dapat diulang).
                        Satu --cdp: navigasi berurutan pada target yang sama.
                        Beberapa --cdp: dipasangkan berurutan, navigasi ke-i
@@ -99,6 +114,11 @@ interface ParsedArgs {
   session: string | null;
   includeBodies: boolean;
   maxBytes: number;
+  maxRows: number | null;
+  maxSeconds: number | null;
+  maxRssMb: number | null;
+  taskQueue: string | null;
+  queuePollMs: number;
   navigateUrls: string[];
   waitMs: number;
   stay: boolean;
@@ -119,6 +139,11 @@ function parseArgs(argv: string[]): ParsedArgs {
     session: null,
     includeBodies: false,
     maxBytes: DEFAULT_MAX_BYTES,
+    maxRows: null,
+    maxSeconds: null,
+    maxRssMb: null,
+    taskQueue: null,
+    queuePollMs: 500,
     navigateUrls: [],
     waitMs: DEFAULT_WAIT_MS,
     stay: false,
@@ -171,6 +196,45 @@ function parseArgs(argv: string[]): ParsedArgs {
           fail(`--max-bytes harus bilangan bulat >= ${MIN_MAX_BYTES}, diterima: ${raw}.`);
         }
         args.maxBytes = n;
+        break;
+      }
+      case "--max-rows": {
+        const raw = takeValue(a, i++);
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < 1) {
+          fail(`--max-rows harus bilangan bulat >= 1, diterima: ${raw}.`);
+        }
+        args.maxRows = n;
+        break;
+      }
+      case "--max-seconds": {
+        const raw = takeValue(a, i++);
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < 1) {
+          fail(`--max-seconds harus bilangan bulat >= 1, diterima: ${raw}.`);
+        }
+        args.maxSeconds = n;
+        break;
+      }
+      case "--max-rss-mb": {
+        const raw = takeValue(a, i++);
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < 1) {
+          fail(`--max-rss-mb harus bilangan bulat >= 1, diterima: ${raw}.`);
+        }
+        args.maxRssMb = n;
+        break;
+      }
+      case "--task-queue":
+        args.taskQueue = takeValue(a, i++);
+        break;
+      case "--queue-poll-ms": {
+        const raw = takeValue(a, i++);
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < 50) {
+          fail(`--queue-poll-ms harus bilangan bulat >= 50, diterima: ${raw}.`);
+        }
+        args.queuePollMs = n;
         break;
       }
       case "--navigate":
@@ -248,6 +312,22 @@ async function main(): Promise<void> {
       fail(`--cdp harus URL WebSocket (ws:// atau wss://), diterima: ${cdpUrl}.`);
     }
   }
+  if (args.maxRssMb !== null && process.platform !== "linux") {
+    fail("--max-rss-mb hanya didukung di Linux (/proc); platform ini tidak dapat menegakkan batas RSS.");
+  }
+  if (args.taskQueue !== null && args.navigateUrls.length > 0) {
+    fail("--task-queue menolak --navigate: pilih antrean atau navigasi langsung.");
+  }
+  if (args.taskQueue !== null && args.replay !== null) {
+    fail("--task-queue menolak --replay: replay menggerakkan navigasinya sendiri.");
+  }
+  if (args.taskQueue !== null) {
+    try {
+      await access(args.taskQueue);
+    } catch {
+      fail(`--task-queue tidak dapat dibaca: ${args.taskQueue}.`);
+    }
+  }
   if (args.replay !== null) {
     if (args.cdpUrls.length !== 1) {
       fail("--replay membutuhkan tepat satu --cdp.");
@@ -274,6 +354,9 @@ async function main(): Promise<void> {
         session: args.session,
         includeBodies: args.includeBodies,
         maxBytes: args.maxBytes,
+        maxRows: args.maxRows,
+        maxSeconds: args.maxSeconds,
+        maxRssMb: args.maxRssMb,
         waitMs: args.waitMs,
         append: args.append,
         livePort: args.livePort,
@@ -312,6 +395,11 @@ async function main(): Promise<void> {
       session: args.session,
       includeBodies: args.includeBodies,
       maxBytes: args.maxBytes,
+      maxRows: args.maxRows,
+      maxSeconds: args.maxSeconds,
+      maxRssMb: args.maxRssMb,
+      taskQueue: args.taskQueue,
+      queuePollMs: args.queuePollMs,
       navigateUrls: args.navigateUrls,
       waitMs: args.waitMs,
       stay: args.stay,
