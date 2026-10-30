@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-30T03:07:32.066Z",
+  "generatedAt": "2026-10-30T03:27:17.530Z",
   "lightpandaVersion": "1.0.2",
   "nodeVersion": "v24.22.1",
   "platform": "linux/x64",
@@ -16,29 +16,29 @@
   },
   "noTracer": {
     "timesMs": [
-      5046,
+      4947,
       4936,
-      4993,
-      4968,
-      5122
+      4929,
+      4922,
+      4962
     ],
-    "medianMs": 4993
+    "medianMs": 4936
   },
   "tracer": {
     "timesMs": [
-      5033,
-      4971,
-      4979,
       4976,
-      5001
+      5014,
+      4990,
+      4978,
+      4970
     ],
-    "medianMs": 4979,
+    "medianMs": 4978,
     "cpuSecondsPerRep": [
       0.17,
-      0.16,
-      0.16,
-      0.16,
-      0.16
+      0.17,
+      0.17,
+      0.17,
+      0.17
     ],
     "traceBytesPerRep": [
       34797,
@@ -48,7 +48,7 @@
       34797
     ]
   },
-  "overheadPct": -0.28,
+  "overheadPct": 0.85,
   "gatePct": 5,
   "verdict": "LULUS"
 }
