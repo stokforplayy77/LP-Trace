@@ -25,7 +25,7 @@ tidak mengirim data ke mana pun. Mengikuti
 | Ekspor CSV (tampilan terfilter saat ini) | Terverifikasi (logika; unduhan diuji lewat DOM di browser) |
 | Ekspor HAR | Subset **best-effort** saja (tanpa breakdown timing, tanpa ukuran), dilabeli demikian di UI |
 | Domain `Log` | Bukan sumber MVP; baris `Log.entryAdded` (bila ada) tampil sebagai event biasa |
-| Pembukaan lewat `file://` | **Tidak dijanjikan** (belum diuji) — jalankan lewat server statis lokal |
+| Pembukaan lewat `file://` | **Tidak berfungsi** (teruji 30 Okt 2026: modul ES diblokir CORS, halaman kosong) — jalankan lewat server statis lokal |
 | Tampilan di HP / perangkat nyata | Dilihat di HP nyata (Android, lewat deploy VPS, 29 Okt 2026): halaman termuat dan terlihat. Pemeriksaan detail (luapan horizontal, unduh CSV) belum dilaporkan; panel live terverifikasi di browser laptop (30 Okt 2026). |
 
 ## Syarat
