@@ -187,7 +187,7 @@ Tabel berikut menyatakan status setiap event pada akhir M0. Status **Belum terve
 | Kegagalan jaringan | `Network.loadingFailed` | Belum terverifikasi (tidak ada kegagalan pada beban uji M0; uji M0b memakai URL yang sengaja gagal) |
 | Konsol | `Runtime.consoleAPICalled` | Terverifikasi (M0); pemetaan level `warn` dan `error` belum dikonfirmasi |
 | Exception JavaScript | `Runtime.exceptionThrown` | Belum terverifikasi (uji M0 dengan throw lewat `Runtime.evaluate` tidak menghasilkan event; uji M0b memakai exception pada halaman yang sedang dimuat) |
-| Entri log | `Log.entryAdded` | Belum terverifikasi (`Log.enable` diterima, tetapi tidak ada entri pada M0; domain Log tidak dipakai pada MVP) |
+| Entri log | `Log.entryAdded` | Terverifikasi di M0b (1 entri untuk sub-resource gagal) dan probe 30 Oktober 2026 (hanya kegagalan pemuatan resource, `source: network`, `level: error`); domain Log tidak dipakai pada MVP, ditangkap sejak 0.1.9 (lihat `LOG-DESIGN.md`) |
 | Perubahan dokumen | `DOM.documentUpdated` | Teramati sekali pada M0; dicatat sebagai penanda kasar saja |
 
 ### 3.6 Redaksi dan Privasi (Wajib)
