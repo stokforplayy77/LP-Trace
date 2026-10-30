@@ -408,6 +408,9 @@
 									<td>
 										{#if entry.failed}
 											<span class="badge failed">gagal: {entry.errorText || 'error'}</span>
+											{#if entry.logText}
+												<div class="hint">{entry.logText}</div>
+											{/if}
 										{:else if entry.endMs !== null}
 											<span class="badge ok">selesai</span>
 										{:else}
@@ -446,6 +449,9 @@
 						<li>
 							<span class="time">{formatSeconds(relativeSeconds(rows, entry.row))}</span>
 							<span class="badge level-{entry.level}">{entry.level}</span>
+							{#if entry.source}
+								<span class="badge">log/{entry.source}</span>
+							{/if}
 							<span class="console-text">{entry.text || '(kosong)'}</span>
 						</li>
 					{/each}
