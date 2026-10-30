@@ -5,6 +5,21 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-10-30
+
+### Added
+
+- Penangkapan domain Log: tracer mengaktifkan `Log.enable`, sehingga
+  `Log.entryAdded` tercatat sebagai pelengkap konsol (di Lightpanda
+  1.0.2 hanya entri kegagalan pemuatan resource; tidak ada duplikasi
+  dengan `consoleAPICalled`/`exceptionThrown` — terverifikasi lewat
+  probe, lihat `docs/LOG-DESIGN.md`). Penampil menampilkan entri Log
+  di Panel Konsol dengan lencana sumber dan menautkan teksnya ke
+  baris waterfall lewat `networkRequestId`. Sidecar menambahkan
+  agregat `log` (`present`, `entries`, `byLevel`, `sources`) dan
+  memasukkan `Log.entryAdded` ke kategori `console`; hitungan `errors`
+  tidak berubah.
+
 ## [0.1.8] - 2026-10-30
 
 ### Fixed
