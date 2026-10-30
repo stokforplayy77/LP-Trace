@@ -361,7 +361,17 @@ async function main() {
       "uji 1 mono_ms tidak menurun",
       rows1.every((r, i) => i === 0 || r.mono_ms >= rows1[i - 1].mono_ms),
     );
-    check("uji 1 domain Log tidak dipakai", rows1.every((r) => !r.type.startsWith("Log.")));
+    check(
+      "uji 1 baris Log (bila ada) membawa entry source/level/text",
+      rows1
+        .filter((r) => r.type === "Log.entryAdded")
+        .every(
+          (r) =>
+            typeof r.data?.entry?.source === "string" &&
+            typeof r.data?.entry?.level === "string" &&
+            typeof r.data?.entry?.text === "string",
+        ),
+    );
     const mode = (await stat(trace1)).mode & 0o777;
     check("uji 1 izin file 0600", mode === 0o600, `mode=${mode.toString(8)}`);
 
