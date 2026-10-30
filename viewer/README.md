@@ -17,7 +17,7 @@ tidak mengirim data ke mana pun. Mengikuti
 | Waterfall dari stempel waktu tracer (`mono_ms`) | Terverifikasi pada trace nyata M1. Entri yang melintasi batas resume dilaporkan tanpa durasi (bukan negatif). |
 | Filter endpoint (multi-endpoint) + lencana endpoint per baris | Terverifikasi (uji logika). Trace lama tanpa field endpoint tetap dibaca. |
 | Penanda sesi dilanjutkan (`tracer.session_resumed`) di metadata | Terverifikasi (uji logika). |
-| Mode live (SSE dari tracer `--live-port`) | Terverifikasi logika parse (`parseLiveEvent`) + uji live tracer; panel SSE (EventSource) belum diuji lewat browser di tahap ini. Baris live menggantikan tampilan file selama tersambung. |
+| Mode live (SSE dari tracer `--live-port`) | Terverifikasi logika parse (`parseLiveEvent`) + uji live tracer + panel SSE di browser nyata (laptop, 30 Okt 2026, via tunnel + origin localhost: Jeda/Lanjut/Putus deterministik). Baris live menggantikan tampilan file selama tersambung. Sejak 0.1.12 server live menjawab preflight PNA; Chrome 142+ juga memerlukan izin Local Network Access di browser. |
 | Breakdown DNS/TLS dan ukuran byte | **Tidak ditampilkan** — datanya kosong dari CDP (timing -1, `encodedDataLength` 0) |
 | Panel konsol + filter level (`log`/`warning`/`error`/`exception`) | Terverifikasi; CDP memakai `"warning"`, bukan `"warn"`; sejak 0.1.9 entri `Log.entryAdded` tampil di panel yang sama dengan lencana sumber (mis. `log/network`), dan teks Log tertaut ke baris waterfall lewat `networkRequestId` |
 | Pencarian teks (URL + teks konsol) | Terverifikasi |
@@ -26,7 +26,7 @@ tidak mengirim data ke mana pun. Mengikuti
 | Ekspor HAR | Subset **best-effort** saja (tanpa breakdown timing, tanpa ukuran), dilabeli demikian di UI |
 | Domain `Log` | Bukan sumber MVP; baris `Log.entryAdded` (bila ada) tampil sebagai event biasa |
 | Pembukaan lewat `file://` | **Tidak dijanjikan** (belum diuji) — jalankan lewat server statis lokal |
-| Tampilan di HP / perangkat nyata | Dilihat di HP nyata (Android, lewat deploy VPS, 29 Okt 2026): halaman termuat dan terlihat. Pemeriksaan detail (luapan horizontal, unduh CSV, panel live) belum dilaporkan. |
+| Tampilan di HP / perangkat nyata | Dilihat di HP nyata (Android, lewat deploy VPS, 29 Okt 2026): halaman termuat dan terlihat. Pemeriksaan detail (luapan horizontal, unduh CSV) belum dilaporkan; panel live terverifikasi di browser laptop (30 Okt 2026). |
 
 ## Syarat
 
