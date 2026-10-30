@@ -126,8 +126,9 @@ docker run --rm -i -v "$PWD:/traces" lp-trace-mcp --trace /traces/trace.jsonl
 
 Konfigurasi di atas adalah contoh bentuk umum untuk klien MCP berbasis
 stdio. Pengujian otomatis memakai klien SDK sungguhan lewat stdio (lihat
-`tests/mcp.test.mjs`); integrasi dengan aplikasi klien tertentu (mis.
-Claude Desktop) **tidak diuji** dan tidak diklaim.
+`tests/mcp.test.mjs`); integrasi dengan aplikasi klien MCP Inspector
+terverifikasi 30 Okt 2026 (`tools/list` + `get_trace_summary` +
+`annotate_trace` end-to-end via stdio).
 
 ## Batas privasi yang jujur
 
