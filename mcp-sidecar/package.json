@@ -1,6 +1,6 @@
 {
   "name": "lp-trace-mcp",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Sidecar MCP untuk trace Lightpanda: get_trace_summary + annotate_trace (M3, sesuai Dokumen Perancangan v1.1)",
   "type": "module",
   "bin": {
