@@ -94,7 +94,7 @@ export type SummaryCategory = (typeof SUMMARY_CATEGORIES)[number];
 
 /** Kelompokkan method CDP ke kategori ringkasan. */
 export function categoryOf(type: string): SummaryCategory {
-  if (type === "Runtime.consoleAPICalled") {
+  if (type === "Runtime.consoleAPICalled" || type === "Log.entryAdded") {
     return "console";
   }
   if (type === "Runtime.exceptionThrown" || type === "Network.loadingFailed") {
@@ -203,8 +203,18 @@ function asString(value: unknown): string | null {
 }
 
 /** Agregat langkah agen (F5). Hanya angka dan nama tool; tanpa argumen, hasil, atau URL lengkap. */
-export interface AgentSummary {
-  /** true bila ada satu baris agent.* atau lebih. */
+export interface LogSummary {
+  /** true bila ada satu baris Log.entryAdded atau lebih. */
+  present: boolean;
+  /** Jumlah entri Log. */
+  entries: number;
+  /** Jumlah per level MENTAH CDP (verbose/info/warning/error; fallback "unknown"). */
+  byLevel: Record<string, number>;
+  /** Jumlah per sumber MENTAH (mis. "network"; fallback "unknown"). */
+  sources: Record<string, number>;
+}
+
+export interface AgentSummary {  /** true bila ada satu baris agent.* atau lebih. */
   present: boolean;
   toolCalls: number;
   errors: number;
@@ -266,6 +276,8 @@ export interface TraceSummary {
   annotations: number;
   /** Agregat langkah agen (F5); nol bila tidak ada baris agent.*. */
   agent: AgentSummary;
+  /** Agregat entri Log (domain Log); nol bila tidak ada baris Log.entryAdded. */
+  log: LogSummary;
   /** Agregat per koneksi CDP (multi-endpoint); kosong untuk trace satu endpoint lama tanpa field endpoint. */
   endpoints: EndpointSummary[];
   /** true bila file memuat baris tracer.session_resumed (sesi dilanjutkan dengan --append). */
@@ -320,6 +332,10 @@ export function computeSummary(
   let agentModelCalls = 0;
   let agentUnknownLines = 0;
   let agentPresent = false;
+  let logPresent = false;
+  let logEntries = 0;
+  const logByLevel: Record<string, number> = {};
+  const logSources: Record<string, number> = {};
   const agentTools: Record<string, number> = {};
   const agentTokens = { input: 0, cached: 0, cache_creation: 0, output: 0 };
   const endpointAgg = new Map<
@@ -428,6 +444,19 @@ export function computeSummary(
       const level = levelRaw === "warn" ? "warning" : (levelRaw ?? "unknown");
       consoleByLevel[level] = (consoleByLevel[level] ?? 0) + 1;
     }
+    if (row.type === "Log.entryAdded") {
+      // Entri Log dihitung terpisah (bukan consoleByLevel, bukan
+      // errors): ia adalah kegagalan yang sama dengan loadingFailed
+      // yang sudah dihitung, dilihat dari sisi Log browser.
+      logPresent = true;
+      logEntries += 1;
+      const raw = asRecord(row.data);
+      const entry = raw !== null ? asRecord(raw["entry"]) : null;
+      const level = entry !== null ? (asString(entry["level"]) ?? "unknown") : "unknown";
+      const source = entry !== null ? (asString(entry["source"]) ?? "unknown") : "unknown";
+      logByLevel[level] = (logByLevel[level] ?? 0) + 1;
+      logSources[source] = (logSources[source] ?? 0) + 1;
+    }
     for (const rawUrl of urlsFromRow(row)) {
       const parts = safeHostPath(rawUrl);
       if (parts !== null) {
@@ -497,6 +526,12 @@ export function computeSummary(
       modelCalls: agentModelCalls,
       tokens: agentTokens,
       unknownLines: agentUnknownLines,
+    },
+    log: {
+      present: logPresent,
+      entries: logEntries,
+      byLevel: logByLevel,
+      sources: logSources,
     },
     endpoints,
     resumed,
