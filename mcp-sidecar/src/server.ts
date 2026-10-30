@@ -22,7 +22,7 @@ export const TOOL_NAMES = ["get_trace_summary", "annotate_trace"] as const;
 const CATEGORY_DESCRIPTIONS: Record<SummaryCategory, string> = {
   navigation: "event Page.* (navigasi)",
   network: "event Network.* kecuali Network.loadingFailed (masuk kategori error)",
-  console: "Runtime.consoleAPICalled (konsol)",
+  console: "Runtime.consoleAPICalled + Log.entryAdded (konsol)",
   error: "Runtime.exceptionThrown + Network.loadingFailed (error)",
   tracer: "baris internal tracer.* (sesi/anotasi)",
   agent: "baris agent.* dari file trace agent --trace upstream (F5)",
