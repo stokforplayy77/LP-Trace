@@ -23,6 +23,7 @@ sidecar MCP (F4, M3) ada di repo ini (`../viewer/`, `../mcp-sidecar/`).
 | Koeksistensi dengan Puppeteer | Terbukti di M0b; M1 tidak mengujinya ulang |
 | Playwright | Terverifikasi berdampingan (ROBUST, `connectOverCDP`, playwright-core 1.64.1); tracer tidak mengamati navigasi Playwright (satu target per koneksi) |
 | `<img>` | Lightpanda 1.0.2 tidak me-fetch `<img>` (0 hit server lokal; temuan ROBUST, bukan bug tracer) |
+| Sesi panjang | 60 detik di rangkaian uji (ROBUST uji 2) + soak manual 300 detik (`tests/run-soak-tests.mjs`); memori datar + laju stabil, lihat `docs/SOAK-DESIGN.md` |
 | Overhead < 5% | Terverifikasi lewat benchmark Bab 3.7 (lihat di bawah) |
 
 ## Syarat
