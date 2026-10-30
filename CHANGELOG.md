@@ -5,6 +5,16 @@ Seluruh perubahan penting proyek ini dicatat di sini. Format mengikuti
 
 ## [Unreleased]
 
+### Changed
+
+- Uji ketahanan: sesi panjang diperpanjang 20 -> 60 detik dengan
+  pemeriksaan pertumbuhan memori datar (RSS akhir <= 1,5x RSS
+  awal) dan laju stabil antar-paruh sesi; ditambah skrip soak
+  manual 300 detik (`tracer-mvp/tests/run-soak-tests.mjs`,
+  bukan bagian rantai CI). Kode produk tidak berubah; tidak
+  ada rilis npm untuk perubahan ini. Lihat
+  `docs/SOAK-DESIGN.md` dan `docs/SOAK-HASIL.md`.
+
 ## [0.1.9] - 2026-10-30
 
 ### Added
