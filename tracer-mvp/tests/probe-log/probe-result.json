@@ -1,0 +1,77 @@
+{
+  "binary": "/home/hatch/workspace/LP-Trace/tracer-mvp/vendor/lightpanda",
+  "counts": {
+    "Target.targetCreated": 1,
+    "Target.attachedToTarget": 1,
+    "Runtime.executionContextCreated": 2,
+    "Page.frameStartedNavigating": 1,
+    "Page.frameStartedLoading": 1,
+    "Network.requestWillBeSent": 2,
+    "Network.responseReceived": 1,
+    "Runtime.executionContextsCleared": 1,
+    "Page.frameNavigated": 1,
+    "Target.targetInfoChanged": 2,
+    "DOM.documentUpdated": 1,
+    "Network.loadingFinished": 1,
+    "Runtime.consoleAPICalled": 5,
+    "Page.domContentEventFired": 1,
+    "Page.loadEventFired": 1,
+    "Page.frameStoppedLoading": 1,
+    "Network.loadingFailed": 1,
+    "Log.entryAdded": 1,
+    "Runtime.exceptionThrown": 2
+  },
+  "logEntries": [
+    {
+      "entry": {
+        "source": "network",
+        "level": "error",
+        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+        "timestamp": 1793325911869,
+        "url": "http://127.0.0.1:9/log-fetch",
+        "networkRequestId": "REQ-0000000002"
+      }
+    }
+  ],
+  "loadingFailed": [
+    {
+      "requestId": "REQ-0000000002",
+      "timestamp": 5664,
+      "type": "Ping",
+      "errorText": "CouldntConnect",
+      "canceled": false
+    }
+  ],
+  "consoleCalls": [
+    {
+      "type": "log",
+      "args": [
+        "LOG hello"
+      ]
+    },
+    {
+      "type": "warning",
+      "args": [
+        "LOG warn"
+      ]
+    },
+    {
+      "type": "error",
+      "args": [
+        "LOG err"
+      ]
+    },
+    {
+      "type": "debug",
+      "args": [
+        "LOG debug"
+      ]
+    },
+    {
+      "type": "info",
+      "args": [
+        "LOG info"
+      ]
+    }
+  ]
+}
