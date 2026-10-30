@@ -6,6 +6,8 @@ import {
 	categoryOf,
 	consoleEntries,
 	consoleLevel,
+	diffConsole,
+	diffWaterfall,
 	durationMs,
 	endpointKey,
 	endpointsOf,
@@ -20,7 +22,8 @@ import {
 	shortEndpointLabel,
 	summarize,
 	toCSV,
-	toHAR
+	toHAR,
+	traceSummary
 } from '../src/lib/trace.ts';
 
 const EXAMPLE = [
@@ -470,4 +473,111 @@ test('LIVE baris dari SSE mengalir ke waterfall/filter yang sama', () => {
 	assert.equal(wf[0].url, 'https://example.com/live');
 	assert.equal(wf[0].totalMs, 100);
 	assert.equal(filterRows(rows, 'live', []).length, 1);
+});
+
+// ---- Perbandingan dua trace (COMPARE-DESIGN.md) ----
+
+const TRACE_A = [
+	'{"ts":"2026-10-30T01:00:00.000Z","mono_ms":0,"seq":1,"session":"sA","lightpanda_version":"1.0.2","type":"tracer.session_started","data":{}}',
+	'{"ts":"2026-10-30T01:00:00.100Z","mono_ms":100,"seq":2,"session":"sA","lightpanda_version":"1.0.2","type":"Network.requestWillBeSent","data":{"requestId":"LID-1","url":"https://example.com/a","method":"GET","type":"Document"}}',
+	'{"ts":"2026-10-30T01:00:00.150Z","mono_ms":150,"seq":3,"session":"sA","lightpanda_version":"1.0.2","type":"Network.responseReceived","data":{"requestId":"LID-1","url":"https://example.com/a","status":200,"mimeType":"text/html"}}',
+	'{"ts":"2026-10-30T01:00:00.200Z","mono_ms":200,"seq":4,"session":"sA","lightpanda_version":"1.0.2","type":"Network.loadingFinished","data":{"requestId":"LID-1"}}',
+	'{"ts":"2026-10-30T01:00:00.300Z","mono_ms":300,"seq":5,"session":"sA","lightpanda_version":"1.0.2","type":"Network.requestWillBeSent","data":{"requestId":"LID-2","url":"https://example.com/b","method":"GET","type":"Document"}}',
+	'{"ts":"2026-10-30T01:00:00.350Z","mono_ms":350,"seq":6,"session":"sA","lightpanda_version":"1.0.2","type":"Network.responseReceived","data":{"requestId":"LID-2","url":"https://example.com/b","status":200}}',
+	'{"ts":"2026-10-30T01:00:00.400Z","mono_ms":400,"seq":7,"session":"sA","lightpanda_version":"1.0.2","type":"Network.loadingFinished","data":{"requestId":"LID-2"}}',
+	'{"ts":"2026-10-30T01:00:00.500Z","mono_ms":500,"seq":8,"session":"sA","lightpanda_version":"1.0.2","type":"Runtime.consoleAPICalled","data":{"type":"log","args":["hello"]}}',
+	'{"ts":"2026-10-30T01:00:00.600Z","mono_ms":600,"seq":9,"session":"sA","lightpanda_version":"1.0.2","type":"Runtime.consoleAPICalled","data":{"type":"log","args":["hello"]}}',
+	'{"ts":"2026-10-30T01:00:00.700Z","mono_ms":700,"seq":10,"session":"sA","lightpanda_version":"1.0.2","type":"Runtime.consoleAPICalled","data":{"type":"warning","args":["lama"]}}',
+	'{"ts":"2026-10-30T01:00:00.800Z","mono_ms":800,"seq":11,"session":"sA","lightpanda_version":"1.0.2","type":"Runtime.exceptionThrown","data":{"exceptionDetails":{"text":"boom"}}}',
+	'{"ts":"2026-10-30T01:00:00.900Z","mono_ms":900,"seq":12,"session":"sA","lightpanda_version":"1.0.2","type":"Network.requestWillBeSent","data":{"requestId":"LID-3","url":"https://example.com/d","method":"GET","type":"Fetch"}}',
+	'{"ts":"2026-10-30T01:00:00.950Z","mono_ms":950,"seq":13,"session":"sA","lightpanda_version":"1.0.2","type":"Network.loadingFinished","data":{"requestId":"LID-3"}}',
+	'{"ts":"2026-10-30T01:00:01.000Z","mono_ms":1000,"seq":14,"session":"sA","lightpanda_version":"1.0.2","type":"Network.requestWillBeSent","data":{"requestId":"LID-4","url":"https://example.com/d","method":"GET","type":"Fetch"}}',
+	'{"ts":"2026-10-30T01:00:01.100Z","mono_ms":1100,"seq":15,"session":"sA","lightpanda_version":"1.0.2","type":"Network.loadingFinished","data":{"requestId":"LID-4"}}',
+	'{"ts":"2026-10-30T01:00:01.200Z","mono_ms":1200,"seq":16,"session":"sA","lightpanda_version":"1.0.2","type":"tracer.session_ended","data":{}}'
+].join('\n');
+
+const TRACE_B = [
+	'{"ts":"2026-10-30T02:00:00.000Z","mono_ms":0,"seq":1,"session":"sB","lightpanda_version":"1.0.2","type":"tracer.session_started","data":{}}',
+	'{"ts":"2026-10-30T02:00:00.100Z","mono_ms":100,"seq":2,"session":"sB","lightpanda_version":"1.0.2","type":"Network.requestWillBeSent","data":{"requestId":"M1","url":"https://example.com/a","method":"GET","type":"Document"}}',
+	'{"ts":"2026-10-30T02:00:00.200Z","mono_ms":200,"seq":3,"session":"sB","lightpanda_version":"1.0.2","type":"Network.responseReceived","data":{"requestId":"M1","url":"https://example.com/a","status":404}}',
+	'{"ts":"2026-10-30T02:00:00.250Z","mono_ms":250,"seq":4,"session":"sB","lightpanda_version":"1.0.2","type":"Network.loadingFinished","data":{"requestId":"M1"}}',
+	'{"ts":"2026-10-30T02:00:00.300Z","mono_ms":300,"seq":5,"session":"sB","lightpanda_version":"1.0.2","type":"Network.requestWillBeSent","data":{"requestId":"M2","url":"https://example.com/c","method":"GET","type":"Fetch"}}',
+	'{"ts":"2026-10-30T02:00:00.400Z","mono_ms":400,"seq":6,"session":"sB","lightpanda_version":"1.0.2","type":"Runtime.consoleAPICalled","data":{"type":"log","args":["hello"]}}',
+	'{"ts":"2026-10-30T02:00:00.500Z","mono_ms":500,"seq":7,"session":"sB","lightpanda_version":"1.0.2","type":"Runtime.consoleAPICalled","data":{"type":"error","args":["baru"]}}',
+	'{"ts":"2026-10-30T02:00:00.600Z","mono_ms":600,"seq":8,"session":"sB","lightpanda_version":"1.0.2","type":"tracer.session_ended","data":{}}'
+].join('\n');
+
+const rowsA = parseTrace(TRACE_A).rows;
+const rowsB = parseTrace(TRACE_B).rows;
+
+test('COMPARE ringkasan: kategori, durasi, sesi, dan agregat network/konsol', () => {
+	const sa = traceSummary(rowsA, 2);
+	assert.equal(sa.session, 'sA');
+	assert.equal(sa.rows, 16);
+	assert.equal(sa.skipped, 2);
+	assert.equal(sa.durationMs, 1200);
+	assert.equal(sa.counts.network, 10);
+	assert.equal(sa.counts.konsol, 3);
+	assert.equal(sa.counts.error, 1);
+	assert.equal(sa.counts.tracer, 2);
+	assert.equal(sa.requests, 4);
+	assert.equal(sa.failedRequests, 0);
+	assert.equal(sa.consoleEntries, 4);
+	assert.equal(sa.exceptions, 1);
+	assert.equal(sa.agentSteps, 0);
+	const sb = traceSummary(rowsB);
+	assert.equal(sb.session, 'sB');
+	assert.equal(sb.durationMs, 600);
+	assert.equal(sb.counts.network, 4);
+	assert.equal(sb.requests, 2);
+	assert.equal(sb.consoleEntries, 2);
+});
+
+test('COMPARE waterfall: pasangan cocok, status berubah, selisih durasi, duplikat, dan durasi null', () => {
+	const diff = diffWaterfall(rowsA, rowsB);
+	assert.equal(diff.length, 5);
+	const pairA = diff[0];
+	assert.equal(pairA.presence, 'both');
+	assert.equal(pairA.url, 'https://example.com/a');
+	assert.equal(pairA.statusA, '200');
+	assert.equal(pairA.statusB, '404');
+	assert.equal(pairA.totalA, 100);
+	assert.equal(pairA.totalB, 150);
+	assert.equal(pairA.deltaMs, 50);
+	const onlyA = diff.filter((d) => d.presence === 'only-a');
+	assert.deepEqual(
+		onlyA.map((d) => d.url),
+		['https://example.com/b', 'https://example.com/d', 'https://example.com/d']
+	);
+	const onlyB = diff.filter((d) => d.presence === 'only-b');
+	assert.equal(onlyB.length, 1);
+	assert.equal(onlyB[0].url, 'https://example.com/c');
+	assert.equal(onlyB[0].totalB, null);
+	assert.equal(onlyB[0].deltaMs, null);
+});
+
+test('COMPARE konsol: multiset level+teks, teks sama level berbeda dihitung terpisah', () => {
+	const { onlyA, onlyB } = diffConsole(rowsA, rowsB);
+	const hello = onlyA.find((e) => e.text === 'hello');
+	assert.equal(hello?.level, 'log');
+	assert.equal(hello?.countA, 2);
+	assert.equal(hello?.countB, 1);
+	assert.equal(hello?.extra, 1);
+	assert.ok(onlyA.some((e) => e.text === 'lama' && e.level === 'warning'));
+	assert.ok(onlyA.some((e) => e.text === 'boom' && e.level === 'exception'));
+	assert.deepEqual(
+		onlyB.map((e) => e.text),
+		['baru']
+	);
+	const sameText = parseTrace(
+		[
+			'{"ts":"2026-10-30T03:00:00.000Z","mono_ms":0,"seq":1,"session":"s","lightpanda_version":"1.0.2","type":"Runtime.consoleAPICalled","data":{"type":"log","args":["sama"]}}',
+			'{"ts":"2026-10-30T03:00:00.100Z","mono_ms":100,"seq":2,"session":"s","lightpanda_version":"1.0.2","type":"Runtime.consoleAPICalled","data":{"type":"error","args":["sama"]}}'
+		].join('\n')
+	).rows;
+	const empty = diffConsole(sameText, sameText);
+	assert.equal(empty.onlyA.length, 0);
+	assert.equal(empty.onlyB.length, 0);
+	const shifted = diffConsole(sameText, parseTrace(TRACE_B).rows);
+	assert.ok(shifted.onlyA.some((e) => e.text === 'sama' && e.level === 'error'));
 });
