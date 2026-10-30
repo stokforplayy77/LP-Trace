@@ -3,6 +3,8 @@
 		agentEntries,
 		categoryOf,
 		consoleEntries,
+		diffConsole,
+		diffWaterfall,
 		durationMs as calcDurationMs,
 		endpointKey,
 		endpointsOf,
@@ -18,6 +20,7 @@
 		summarize,
 		toCSV,
 		toHAR,
+		traceSummary,
 		type Category,
 		type ParsedTrace,
 		type TraceRow
@@ -29,6 +32,12 @@
 	let loadError = $state('');
 	let query = $state('');
 	let loadingSample = $state(false);
+
+	// Trace pembanding (file B): tidak mengubah panel yang ada, yang
+	// tetap menampilkan trace A (atau baris live bila tersambung).
+	let parsedB = $state<ParsedTrace | null>(null);
+	let fileNameB = $state('');
+	let loadErrorB = $state('');
 
 	// Mode live (SSE dari tracer --live-port): baris live menggantikan
 	// baris file selama tersambung; seluruh tampilan turunan memakai
@@ -108,6 +117,55 @@
 	const timelineRows = $derived(filteredRows.slice(0, 1000));
 	const timelineTruncated = $derived(filteredRows.length > timelineRows.length);
 
+	// Perbandingan dua trace (COMPARE-DESIGN.md): memakai seluruh baris
+	// file A dan B, tanpa filter/pencarian.
+	const summaryA = $derived(parsed ? traceSummary(parsed.rows, parsed.skipped) : null);
+	const summaryB = $derived(parsedB ? traceSummary(parsedB.rows, parsedB.skipped) : null);
+	const showCompare = $derived(summaryA !== null && summaryB !== null);
+	const waterfallDiff = $derived(
+		parsed && parsedB ? diffWaterfall(parsed.rows, parsedB.rows) : []
+	);
+	const consoleDiff = $derived(
+		parsed && parsedB
+			? diffConsole(parsed.rows, parsedB.rows)
+			: { onlyA: [], onlyB: [] }
+	);
+	const compareConsoleA = $derived(consoleDiff.onlyA.slice(0, 100));
+	const compareConsoleB = $derived(consoleDiff.onlyB.slice(0, 100));
+
+	function signedDelta(n: number): string {
+		return n > 0 ? `+${n}` : String(n);
+	}
+
+	function compareMetricRows(
+		a: NonNullable<typeof summaryA>,
+		b: NonNullable<typeof summaryB>
+	): Array<{ label: string; a: string; b: string; delta: string }> {
+		const num = (label: string, av: number, bv: number) => ({
+			label,
+			a: String(av),
+			b: String(bv),
+			delta: signedDelta(bv - av)
+		});
+		return [
+			num('Baris', a.rows, b.rows),
+			{
+				label: 'Durasi',
+				a: formatSeconds(a.durationMs / 1000),
+				b: formatSeconds(b.durationMs / 1000),
+				delta: `${signedDelta(Math.round(b.durationMs - a.durationMs))} ms`
+			},
+			num('Permintaan network', a.requests, b.requests),
+			num('Permintaan gagal', a.failedRequests, b.failedRequests),
+			num('Entri konsol', a.consoleEntries, b.consoleEntries),
+			num('Exception', a.exceptions, b.exceptions),
+			num('Langkah agen', a.agentSteps, b.agentSteps),
+			...ALL_CATEGORIES.map((cat) =>
+				num(`Kategori: ${CATEGORY_LABEL[cat]}`, a.counts[cat], b.counts[cat])
+			)
+		];
+	}
+
 	function applyText(text: string, name: string) {
 		const result = parseTrace(text);
 		if (result.rows.length === 0) {
@@ -127,6 +185,31 @@
 		const file = input.files?.[0];
 		if (!file) return;
 		applyText(await file.text(), file.name);
+	}
+
+	function applyCompareText(text: string, name: string) {
+		const result = parseTrace(text);
+		if (result.rows.length === 0) {
+			parsedB = null;
+			loadErrorB = `Tidak ada baris trace valid pada "${name}" (${result.skipped} baris dilewati).`;
+			return;
+		}
+		parsedB = result;
+		fileNameB = name;
+		loadErrorB = '';
+	}
+
+	async function onCompareFilePicked(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		applyCompareText(await file.text(), file.name);
+	}
+
+	function clearCompare() {
+		parsedB = null;
+		fileNameB = '';
+		loadErrorB = '';
 	}
 
 	async function loadSample() {
@@ -242,8 +325,17 @@
 		<button type="button" onclick={loadSample} disabled={loadingSample}>
 			{loadingSample ? 'Memuat…' : 'Muat trace contoh'}
 		</button>
-		{#if fileName}<span class="file-name">{fileName}</span>{/if}
+		{#if fileName}<span class="file-name">A: {fileName}</span>{/if}
 		{#if loadError}<p class="error" role="alert">{loadError}</p>{/if}
+		<label class="file-label">
+			Bandingkan dengan file .jsonl
+			<input type="file" accept=".jsonl,.txt" onchange={onCompareFilePicked} />
+		</label>
+		{#if fileNameB}<span class="file-name">B: {fileNameB}</span>{/if}
+		{#if parsedB}
+			<button type="button" onclick={clearCompare}>Hapus perbandingan</button>
+		{/if}
+		{#if loadErrorB}<p class="error" role="alert">{loadErrorB}</p>{/if}
 	</section>
 
 	<section class="loader" aria-label="Mode live">
@@ -326,6 +418,131 @@
 				>
 			</div>
 		</section>
+
+		{#if showCompare && summaryA && summaryB}
+			<section aria-label="Perbandingan trace">
+				<h2>Perbandingan Trace</h2>
+				<p class="hint">
+					Perbandingan memakai seluruh baris kedua file (filter dan pencarian tidak
+					diterapkan). A: {fileName} (sesi {summaryA.session || '—'}, {summaryA.lightpanda_version});
+					B: {fileNameB} (sesi {summaryB.session || '—'}, {summaryB.lightpanda_version}).
+				</p>
+				<div class="table-wrap">
+					<table>
+						<thead>
+							<tr>
+								<th>Metrik</th>
+								<th>A</th>
+								<th>B</th>
+								<th>Selisih (B − A)</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each compareMetricRows(summaryA, summaryB) as m (m.label)}
+								<tr>
+									<td>{m.label}</td>
+									<td>{m.a}</td>
+									<td>{m.b}</td>
+									<td>{m.delta}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+				<h3>Diff Waterfall</h3>
+				<p class="hint">
+					Dipasangkan berdasarkan metode + URL (kemunculan ke-n dengan ke-n); selisih
+					durasi "—" bila salah satu sisi tanpa durasi.
+				</p>
+				{#if waterfallDiff.length === 0}
+					<p class="empty">Tidak ada permintaan jaringan pada kedua trace.</p>
+				{:else}
+					<div class="table-wrap">
+						<table>
+							<thead>
+								<tr>
+									<th>Kehadiran</th>
+									<th>Metode</th>
+									<th>URL</th>
+									<th>Status A</th>
+									<th>Status B</th>
+									<th>Total A</th>
+									<th>Total B</th>
+									<th>Selisih</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each waterfallDiff as entry, i (entry.key + '-' + entry.presence + '-' + i)}
+									<tr>
+										<td>
+											{#if entry.presence === 'both'}
+												<span class="badge ok">di kedua file</span>
+											{:else if entry.presence === 'only-a'}
+												<span class="badge only">hanya di A</span>
+											{:else}
+												<span class="badge only">hanya di B</span>
+											{/if}
+										</td>
+										<td><code>{entry.method || '—'}</code></td>
+										<td class="url">{entry.url}</td>
+										<td>{entry.statusA ?? '—'}</td>
+										<td>{entry.statusB ?? '—'}</td>
+										<td>{entry.totalA === null ? '—' : `${entry.totalA} ms`}</td>
+										<td>{entry.totalB === null ? '—' : `${entry.totalB} ms`}</td>
+										<td>{entry.deltaMs === null ? '—' : `${signedDelta(entry.deltaMs)} ms`}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
+				<h3>Diff Konsol</h3>
+				<p class="hint">
+					Entri yang lebih sering muncul di satu sisi (kunci level + teks); ditampilkan
+					paling banyak 100 per sisi.
+				</p>
+				<div class="compare-cols">
+					<div>
+						<h4>Hanya / lebih banyak di A ({consoleDiff.onlyA.length})</h4>
+						{#if compareConsoleA.length === 0}
+							<p class="empty">Tidak ada.</p>
+						{:else}
+							<ol class="console-list">
+								{#each compareConsoleA as entry, i (entry.level + '-' + entry.text + '-' + i)}
+									<li>
+										<span class="badge level-{entry.level}">{entry.level}</span>
+										<span class="console-text">{entry.text || '(kosong)'}</span>
+										<span class="file-name">×{entry.countA} vs ×{entry.countB}</span>
+									</li>
+								{/each}
+							</ol>
+							{#if consoleDiff.onlyA.length > compareConsoleA.length}
+								<p class="hint">Menampilkan 100 dari {consoleDiff.onlyA.length} entri.</p>
+							{/if}
+						{/if}
+					</div>
+					<div>
+						<h4>Hanya / lebih banyak di B ({consoleDiff.onlyB.length})</h4>
+						{#if compareConsoleB.length === 0}
+							<p class="empty">Tidak ada.</p>
+						{:else}
+							<ol class="console-list">
+								{#each compareConsoleB as entry, i (entry.level + '-' + entry.text + '-' + i)}
+									<li>
+										<span class="badge level-{entry.level}">{entry.level}</span>
+										<span class="console-text">{entry.text || '(kosong)'}</span>
+										<span class="file-name">×{entry.countA} vs ×{entry.countB}</span>
+									</li>
+								{/each}
+							</ol>
+							{#if consoleDiff.onlyB.length > compareConsoleB.length}
+								<p class="hint">Menampilkan 100 dari {consoleDiff.onlyB.length} entri.</p>
+							{/if}
+						{/if}
+					</div>
+				</div>
+			</section>
+		{/if}
 
 		<section aria-label="Timeline">
 			<h2>Timeline</h2>
@@ -537,6 +754,26 @@
 		font-size: 19px;
 		margin: 28px 0 4px;
 	}
+	h3 {
+		color: #0b3d54;
+		font-size: 16px;
+		margin: 20px 0 4px;
+	}
+	h4 {
+		color: #0b3d54;
+		font-size: 14px;
+		margin: 12px 0 4px;
+	}
+	.compare-cols {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 16px;
+	}
+	@media (max-width: 640px) {
+		.compare-cols {
+			grid-template-columns: 1fr;
+		}
+	}
 	.notice {
 		background: #fffbeb;
 		border: 1px solid #f59e0b;
@@ -715,6 +952,10 @@
 	.badge.ok {
 		background: #dcfce7;
 		color: #166534;
+	}
+	.badge.only {
+		background: #fef3c7;
+		color: #92400e;
 	}
 	.badge.failed,
 	.badge.level-error,
