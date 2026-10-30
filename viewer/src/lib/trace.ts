@@ -631,3 +631,186 @@ export function durationMs(rows: TraceRow[]): number {
 export function formatSeconds(value: number): string {
 	return `${value.toFixed(3)} dtk`;
 }
+
+// ---- Perbandingan dua trace (COMPARE-DESIGN.md) ----
+
+export interface TraceSummary {
+	session: string;
+	lightpanda_version: string;
+	rows: number;
+	skipped: number;
+	durationMs: number;
+	counts: Record<Category, number>;
+	requests: number;
+	failedRequests: number;
+	consoleEntries: number;
+	exceptions: number;
+	agentSteps: number;
+}
+
+const ALL_CATEGORIES_LIST: Category[] = [
+	'navigasi',
+	'network',
+	'konsol',
+	'error',
+	'tracer',
+	'agen',
+	'lainnya'
+];
+
+/** Ringkasan satu trace untuk tabel perbandingan (seluruh baris, tanpa filter). */
+export function traceSummary(rows: TraceRow[], skipped = 0): TraceSummary {
+	const counts = Object.fromEntries(ALL_CATEGORIES_LIST.map((c) => [c, 0])) as Record<
+		Category,
+		number
+	>;
+	for (const row of rows) counts[categoryOf(row.type)]++;
+	const waterfall = groupWaterfall(rows);
+	return {
+		session: rows[0]?.session ?? '',
+		lightpanda_version: rows[0]?.lightpanda_version ?? '',
+		rows: rows.length,
+		skipped,
+		durationMs: durationMs(rows),
+		counts,
+		requests: waterfall.length,
+		failedRequests: waterfall.filter((e) => e.failed).length,
+		consoleEntries: consoleEntries(rows).length,
+		exceptions: rows.filter((row) => row.type === 'Runtime.exceptionThrown').length,
+		agentSteps: agentEntries(rows).length
+	};
+}
+
+export interface WaterfallDiff {
+	/** Kunci pasangan: metode + URL (atau requestId bila URL kosong). */
+	key: string;
+	method: string;
+	url: string;
+	presence: 'both' | 'only-a' | 'only-b';
+	statusA: string | null;
+	statusB: string | null;
+	totalA: number | null;
+	totalB: number | null;
+	/** Selisih total (B − A) dalam ms; null bila salah satu sisi tanpa durasi. */
+	deltaMs: number | null;
+}
+
+function waterfallDiffKey(entry: WaterfallEntry): string {
+	return `${entry.method}\n${entry.url || entry.requestId}`;
+}
+
+/**
+ * Pasangkan entri waterfall dua trace berdasarkan kunci metode+URL;
+ * kemunculan ke-n dipasangkan dengan kemunculan ke-n. Urutan: pasangan
+ * di kedua file (selisih absolut terbesar dulu), lalu hanya-di-A (urut
+ * URL), lalu hanya-di-B (urut URL).
+ */
+export function diffWaterfall(a: TraceRow[], b: TraceRow[]): WaterfallDiff[] {
+	const groupByKey = (entries: WaterfallEntry[]): Map<string, WaterfallEntry[]> => {
+		const map = new Map<string, WaterfallEntry[]>();
+		for (const entry of entries) {
+			const key = waterfallDiffKey(entry);
+			const list = map.get(key) ?? [];
+			list.push(entry);
+			map.set(key, list);
+		}
+		return map;
+	};
+	const mapA = groupByKey(groupWaterfall(a));
+	const mapB = groupByKey(groupWaterfall(b));
+	const keys = new Set([...mapA.keys(), ...mapB.keys()]);
+	const both: WaterfallDiff[] = [];
+	const onlyA: WaterfallDiff[] = [];
+	const onlyB: WaterfallDiff[] = [];
+	const toDiff = (
+		entryA: WaterfallEntry | undefined,
+		entryB: WaterfallEntry | undefined
+	): WaterfallDiff => {
+		const entry = entryA ?? entryB!;
+		const totalA = entryA?.totalMs ?? null;
+		const totalB = entryB?.totalMs ?? null;
+		return {
+			key: waterfallDiffKey(entry),
+			method: entry.method,
+			url: entry.url || entry.requestId,
+			presence: entryA && entryB ? 'both' : entryA ? 'only-a' : 'only-b',
+			statusA: entryA ? entryA.status || null : null,
+			statusB: entryB ? entryB.status || null : null,
+			totalA,
+			totalB,
+			deltaMs: totalA !== null && totalB !== null ? totalB - totalA : null
+		};
+	};
+	for (const key of keys) {
+		const listA = mapA.get(key) ?? [];
+		const listB = mapB.get(key) ?? [];
+		const n = Math.max(listA.length, listB.length);
+		for (let i = 0; i < n; i++) {
+			const diff = toDiff(listA[i], listB[i]);
+			if (diff.presence === 'both') both.push(diff);
+			else if (diff.presence === 'only-a') onlyA.push(diff);
+			else onlyB.push(diff);
+		}
+	}
+	both.sort((x, y) => {
+		const ax = x.deltaMs === null ? -1 : Math.abs(x.deltaMs);
+		const ay = y.deltaMs === null ? -1 : Math.abs(y.deltaMs);
+		return ay - ax || x.url.localeCompare(y.url);
+	});
+	onlyA.sort((x, y) => x.url.localeCompare(y.url));
+	onlyB.sort((x, y) => x.url.localeCompare(y.url));
+	return [...both, ...onlyA, ...onlyB];
+}
+
+export interface ConsoleDiffEntry {
+	level: string;
+	text: string;
+	countA: number;
+	countB: number;
+	/** Selisih kemunculan di sisi yang berlebih. */
+	extra: number;
+}
+
+export interface ConsoleDiff {
+	onlyA: ConsoleDiffEntry[];
+	onlyB: ConsoleDiffEntry[];
+}
+
+/**
+ * Bandingkan entri konsol sebagai multiset berkunci level+teks: kunci
+ * yang lebih sering di satu sisi masuk daftar sisi itu sebanyak
+ * selisih kemunculannya. Urutan: selisih terbesar dulu, lalu teks.
+ */
+export function diffConsole(a: TraceRow[], b: TraceRow[]): ConsoleDiff {
+	const countByKey = (entries: ConsoleEntry[]): Map<string, { level: string; text: string; count: number }> => {
+		const map = new Map<string, { level: string; text: string; count: number }>();
+		for (const entry of entries) {
+			const key = `${entry.level}\n${entry.text}`;
+			const slot = map.get(key) ?? { level: entry.level, text: entry.text, count: 0 };
+			slot.count++;
+			map.set(key, slot);
+		}
+		return map;
+	};
+	const mapA = countByKey(consoleEntries(a));
+	const mapB = countByKey(consoleEntries(b));
+	const onlyA: ConsoleDiffEntry[] = [];
+	const onlyB: ConsoleDiffEntry[] = [];
+	for (const [key, slotA] of mapA) {
+		const countB = mapB.get(key)?.count ?? 0;
+		if (slotA.count > countB) {
+			onlyA.push({ level: slotA.level, text: slotA.text, countA: slotA.count, countB, extra: slotA.count - countB });
+		}
+	}
+	for (const [key, slotB] of mapB) {
+		const countA = mapA.get(key)?.count ?? 0;
+		if (slotB.count > countA) {
+			onlyB.push({ level: slotB.level, text: slotB.text, countA, countB: slotB.count, extra: slotB.count - countA });
+		}
+	}
+	const byExtra = (x: ConsoleDiffEntry, y: ConsoleDiffEntry) =>
+		y.extra - x.extra || x.text.localeCompare(y.text);
+	onlyA.sort(byExtra);
+	onlyB.sort(byExtra);
+	return { onlyA, onlyB };
+}
