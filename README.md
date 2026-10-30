@@ -51,12 +51,14 @@ redaksi, ada di [docs/dokumen-perancangan-v1.1.md](docs/dokumen-perancangan-v1.1
   pasca-hoc atas file trace agen yang sudah selesai dijangkar pada
   mtime file (lihat `docs/ANCHOR-DESIGN.md`), sehingga langkah tampil
   pada waktu aslinya.
-- Pembukaan penampil lewat `file://` **tidak berfungsi** (teruji
-  30 Okt 2026: modul ES diblokir CORS, halaman kosong) — jalankan
-  lewat server statis lokal. Integrasi sidecar dengan aplikasi
-  klien MCP terverifikasi lewat MCP Inspector (30 Okt 2026:
-  `tools/list` + `get_trace_summary` + `annotate_trace`,
-  anotasi tertulis ke file).
+- Pembukaan penampil lewat `file://` **didukung varian single-file**
+  (`npm run build:singlefile`, buka `build-singlefile/index.html` —
+  teruji 30 Okt 2026: boot, muat lewat pemilih file, live SSE
+  tersambung; tombol "Muat trace contoh" gagal anggun karena fetch
+  file diblokir CORS). Build normal tetap lewat server statis lokal.
+  Integrasi sidecar dengan aplikasi klien MCP terverifikasi lewat
+  MCP Inspector (30 Okt 2026: `tools/list` + `get_trace_summary` +
+  `annotate_trace`, anotasi tertulis ke file).
   Koeksistensi Playwright terverifikasi (ROBUST): `connectOverCDP`
   berdampingan dengan tracer; tracer tidak mengamati navigasi
   Playwright (satu target per koneksi).
