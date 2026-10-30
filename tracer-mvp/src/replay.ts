@@ -158,6 +158,9 @@ export interface ReplayOptions {
   session: string | null;
   includeBodies: boolean;
   maxBytes: number;
+  maxRows: number | null;
+  maxSeconds: number | null;
+  maxRssMb: number | null;
   waitMs: number;
   append: boolean;
   livePort: number | null;
@@ -205,6 +208,11 @@ export async function runReplay(opts: ReplayOptions): Promise<ReplayOutcome> {
     session: replaySession,
     includeBodies: opts.includeBodies,
     maxBytes: opts.maxBytes,
+    maxRows: opts.maxRows,
+    maxSeconds: opts.maxSeconds,
+    maxRssMb: opts.maxRssMb,
+    taskQueue: null,
+    queuePollMs: 500,
     navigateUrls: steps,
     waitMs: opts.waitMs,
     stay: false,
